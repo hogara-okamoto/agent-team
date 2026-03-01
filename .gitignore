@@ -1,0 +1,31 @@
+# --- Projects ---
+node_modules/
+dist/
+dist-electron/
+__pycache__/
+*.pyc
+
+# --- Large AI Models (MUST IGNORE) ---
+models/
+**/models/
+*.bin
+*.onnx
+
+# --- Environments ---
+.venv/
+venv_win/
+.env
+
+# --- Audio Files ---
+*.wav
+tmp/
+
+# --- OS / ツール固有 ---
+.DS_Store
+.claude/
+.vscode/
+.cursor/
+
+# --- アプリの出力データ ---
+*.wav
+tmp/

@@ -1,0 +1,24 @@
+stt:
+  model: "small"           # tiny / base / small / medium / large-v3
+  language: "ja"
+  device: "cuda"           # cuda / cpu
+  compute_type: "float16"  # float16 (GPU) / int8 (CPU)
+  download_root: "models/whisper"
+
+llm:
+  model: "llama3.2:3b"
+  base_url: "http://localhost:11434"
+  keep_alive: 0            # 推論後すぐ VRAM 解放
+  system_prompt: "あなたは親切なアシスタントです。簡潔に日本語で答えてください。"
+
+tts:
+  engine: "openjtalk"
+  openjtalk_dict: "/var/lib/mecab/dic/open-jtalk/naist-jdic"
+  openjtalk_voice: "/usr/share/hts-voice/nitech-jp-atr503-m001/nitech_jp_atr503_m001.htsvoice"
+
+audio:
+  sample_rate: 16000
+  chunk_duration: 0.1      # 録音チャンク長 (秒)
+  silence_threshold: 0.02  # 無音判定 RMS 閾値
+  silence_duration: 1.5    # この秒数無音で録音終了
+  max_record_duration: 30.0

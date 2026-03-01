@@ -1,0 +1,144 @@
+# セットアップ手順
+
+> コンテナ再構築後や WSL2 環境への展開時はこの手順に従うこと。
+> 確認済み動作環境: NVIDIA GeForce RTX 3050 Ti / CUDA 13.1 / Driver 591.74 / Debian 11 (bullseye)
+
+---
+
+## 1. システムパッケージ（apt）
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+    libportaudio2 portaudio19-dev \
+    zstd \
+    open-jtalk open-jtalk-mecab-naist-jdic hts-voice-nitech-jp-atr503-m001
+```
+
+---
+
+## 2. 日本語フォント（Electron UI 用）
+
+Debian 11 の apt には `fonts-noto-cjk` が含まれないため、直接インストールする。
+
+```bash
+sudo mkdir -p /usr/local/share/fonts/noto
+
+sudo curl -L "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf" \
+  -o /usr/local/share/fonts/noto/NotoSansCJKjp-Regular.otf
+
+sudo curl -L "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansCJKjp-Bold.otf" \
+  -o /usr/local/share/fonts/noto/NotoSansCJKjp-Bold.otf
+
+sudo fc-cache -f /usr/local/share/fonts/noto
+
+# 確認
+fc-list | grep "Noto Sans CJK JP"
+```
+
+---
+
+## 3. Python 環境（バックエンド共有 venv）
+
+Python 3.11.14 は `/usr/local/python/current/bin/python` にインストール済み。
+
+```bash
+cd agent-team
+
+# 共有 venv 作成（初回のみ）
+python -m venv .venv
+
+# 依存パッケージをインストール
+.venv/bin/pip install -r voice-chatbot/requirements.txt
+.venv/bin/pip install fastapi "uvicorn[standard]" python-multipart
+```
+
+---
+
+## 4. CUDA ライブラリパス（STT GPU 高速化必須）
+
+`~/.bashrc` の末尾に追記。
+
+```bash
+VENV_SITE="$HOME/claude-code-test/agent-team/voice-chatbot/.venv/lib/python3.11/site-packages"
+export LD_LIBRARY_PATH="${VENV_SITE}/nvidia/cublas/lib:${VENV_SITE}/nvidia/cudnn/lib:${LD_LIBRARY_PATH:-}"
+```
+
+---
+
+## 5. Ollama のセットアップ
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+
+# 起動（コンテナ再起動のたびに必要）
+ollama serve > /tmp/ollama.log 2>&1 &
+
+# モデル取得（初回のみ）
+ollama pull llama3.2:3b
+```
+
+> WSL2 は systemd が動かないため `ollama serve` を手動で起動すること。
+
+---
+
+## 6. FastAPI バックエンドの起動
+
+```bash
+cd agent-team/backend
+
+# 起動（ポート 8000）
+../venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+
+# 動作確認
+curl http://localhost:8000/health
+```
+
+バックエンドは WSL2 側で起動したまま維持すること。
+各コンポーネントが未初期化の場合、対応エンドポイントは 503 を返して継続動作する。
+
+---
+
+## 7. Electron フロントエンドの起動（Windows 側）
+
+```bash
+cd agent-team/frontend
+
+# 依存パッケージ（初回のみ）
+npm install
+
+# 本番起動
+npm run build
+npm start
+
+# 開発時（ホットリロード）
+npm run dev
+```
+
+> **マイク権限**: `session.setPermissionRequestHandler` で自動許可済み。
+> 初回起動時に Windows がマイクアクセスを確認する場合は「許可」を選択すること。
+
+---
+
+## TTS について
+
+現在の TTS エンジンは **open_jtalk**（`config.yaml` の `engine: openjtalk`）。
+
+- piper バイナリ（rhasspy 2023.11.14-2）は OpenJTalk 非対応のため廃止。
+- open_jtalk はシステムパッケージとしてインストール済みであること。
+
+piper に戻す場合は `config.yaml` で `engine: piper` に変更する。
+
+---
+
+## トラブルシューティング
+
+| エラー | 原因 | 対処 |
+|---|---|---|
+| 日本語が□□□になる | フォント未インストール | 手順2を実行。インターネット接続時は Google Fonts が自動適用 |
+| マイクが使えない | Electron のパーミッション | `main.js` に `setPermissionRequestHandler` が設定されているか確認 |
+| `libcublas.so.12 is not found` | LD_LIBRARY_PATH 未設定 | 手順4の CUDA パス設定を確認 |
+| `PortAudio library not found` | libportaudio2 未インストール | `sudo apt-get install libportaudio2` |
+| Ollama 接続エラー | サーバー未起動 | `ollama serve &` を実行 |
+| `open_jtalk: command not found` | open-jtalk 未インストール | 手順1を実行 |
+| バックエンドが 503 を返す | モデル未初期化 | `/health` でどのコンポーネントが失敗しているか確認 |
