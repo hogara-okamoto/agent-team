@@ -88,7 +88,7 @@ ollama pull llama3.2:3b
 cd agent-team/backend
 
 # 起動（ポート 8000）
-../venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+python3 main.py
 
 # 動作確認
 curl http://localhost:8000/health

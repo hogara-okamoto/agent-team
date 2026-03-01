@@ -135,7 +135,7 @@ npm install
 ```bash
 cd agent-team/backend
 ollama serve > /tmp/ollama.log 2>&1 &   # Ollama が未起動の場合
-../.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+python3 main.py   #.venvの環境で実行
 ```
 
 **ターミナル2（Windows / WSL2）** — Electron アプリを起動
@@ -193,7 +193,8 @@ agent-team/
 - [x] Electron フロントエンド（マイク録音・会話ループ）
 - [x] エンドツーエンドの音声会話
 - [ ] システムトレイ常駐
-- [ ] グローバルホットキーで呼び出し
+- [ ] グローバルホットキーで呼び出し（キー押下で録音開始）
+- [ ] ウェイクワードで呼び出し（発話で自動録音開始）
 - [ ] Windows 起動時に自動起動
 - [ ] 会話履歴の永続化
 - [ ] 専門エージェント（ファイル操作・Web 検索・コード実行）
