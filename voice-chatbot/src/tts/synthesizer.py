@@ -1,13 +1,126 @@
 from __future__ import annotations
 
+import array
 import io
 import json
 import os
+import re
 import subprocess
 import tempfile
 import wave
 from pathlib import Path
 from typing import Optional
+
+# open_jtalk が「文末」と認識する句読点
+_SENTENCE_END = frozenset('。！？!?')
+
+
+def _strip_markdown(text: str) -> str:
+    """TTS に渡す前に Markdown 記法を除去する。
+    **bold**, *italic*, # 見出し, 番号リスト, コードブロック等を自然なテキストに変換する。
+    """
+    # コードブロック（```...```）を除去
+    text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+    # インラインコード（`code`）を除去
+    text = re.sub(r'`[^`]+`', '', text)
+    # 見出し（## 見出し → 見出し）
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # bold/italic（**text** / *text* / __text__ / _text_）
+    text = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', text)
+    text = re.sub(r'_{1,2}([^_]+)_{1,2}', r'\1', text)
+    # 番号付きリスト（1. 2. など → そのまま残すが行頭の番号は除去）
+    text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+    # 箇条書き（- / * / + 行頭）
+    text = re.sub(r'^[-*+]\s+', '', text, flags=re.MULTILINE)
+    # リンク（[text](url) → text）
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    # 水平線
+    text = re.sub(r'^[-*_]{3,}$', '', text, flags=re.MULTILINE)
+    # 連続する空白・改行を整理
+    text = re.sub(r'\n{2,}', '。', text)
+    text = re.sub(r'[ \t]+', ' ', text)
+    return text.strip()
+
+
+_BREAK_RE = re.compile(r'(?<=[。！？!?\n、,をにがでもやからのでけど])')
+_MAX_CHARS = 20  # これを超えると open_jtalk の prosody が崩れやすい
+
+
+def _split_sentences(text: str) -> list[str]:
+    """日本語テキストを open_jtalk が自然に読める長さに分割する。
+
+    句読点・助詞・読点で分割後、MAX_CHARS 以下になるよう貪欲に結合する。
+    長文をそのまま渡すと HTS モデルが後半の韻律を崩すため。
+    """
+    raw = [p.strip() for p in _BREAK_RE.split(text) if p.strip()]
+
+    result: list[str] = []
+    current = ""
+    for part in raw:
+        candidate = current + part if current else part
+        if len(candidate) <= _MAX_CHARS:
+            current = candidate
+        else:
+            if current:
+                result.append(current)
+            current = part  # 単独で超える場合はそのまま（仕方なし）
+    if current:
+        result.append(current)
+    return result
+
+
+def _ensure_sentence_end(text: str) -> str:
+    """open_jtalk が自然な文末イントネーションを生成できるよう、
+    句読点がない場合は「。」を補完する。
+    補完しないと最後の音素が引き延ばされて不自然になる。"""
+    return text if text[-1] in _SENTENCE_END else text + '。'
+
+
+def _trim_trailing_silence(wav_bytes: bytes, threshold: int = 300, padding_ms: int = 120) -> bytes:
+    """WAV 末尾の無音・引き延ばし音をトリムする。
+    threshold : 無音とみなす int16 絶対値（0-32767）
+    padding_ms: トリム後に残す余白（ミリ秒）
+    """
+    with wave.open(io.BytesIO(wav_bytes), "rb") as w:
+        params = w.getparams()
+        frames = w.readframes(w.getnframes())
+
+    samples = array.array('h', frames)
+    n = len(samples)
+
+    # 末尾から threshold を超える最後のサンプル位置を探す
+    last_active = n - 1
+    while last_active > 0 and abs(samples[last_active]) <= threshold:
+        last_active -= 1
+
+    padding = int(params.framerate * padding_ms / 1000)
+    end = min(last_active + padding, n)
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as out:
+        out.setparams(params)
+        out.writeframes(samples[:end].tobytes())
+    buf.seek(0)
+    return buf.read()
+
+
+def _concat_wavs(wav_bytes_list: list[bytes]) -> bytes:
+    """複数の WAV バイト列を1つに結合する。"""
+    if len(wav_bytes_list) == 1:
+        return wav_bytes_list[0]
+    all_frames = b""
+    params = None
+    for wav_bytes in wav_bytes_list:
+        with wave.open(io.BytesIO(wav_bytes), "rb") as w:
+            if params is None:
+                params = w.getparams()
+            all_frames += w.readframes(w.getnframes())
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as out:
+        out.setparams(params)
+        out.writeframes(all_frames)
+    buf.seek(0)
+    return buf.read()
 
 
 # piper C++ バイナリのデフォルト配置場所（フラット構造）
@@ -34,6 +147,17 @@ class OpenJTalkSynthesizer:
         print(f"[TTS] OpenJTalk モード: {Path(voice_path).name}")
 
     def synthesize(self, text: str) -> bytes:
+        text = _strip_markdown(text)
+        sentences = _split_sentences(text)
+        if not sentences:
+            sentences = [text]
+        # 個別セグメントはトリムせず（英語混じりなど振幅が小さい文が無音化するため）
+        # _ensure_sentence_end で「。」を補完することで末尾の伸びを抑制する
+        wav_list = [self._synthesize_one(_ensure_sentence_end(s)) for s in sentences]
+        # 最終結合 WAV の末尾無音だけをトリムする
+        return _trim_trailing_silence(_concat_wavs(wav_list))
+
+    def _synthesize_one(self, text: str) -> bytes:
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp_path = Path(tmp.name)
         tmp.close()
@@ -174,3 +298,199 @@ class PiperSynthesizer:
             return tmp_path.read_bytes()
         finally:
             tmp_path.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# VOICEVOX
+# ---------------------------------------------------------------------------
+
+class VOICEVOXSynthesizer:
+    """VOICEVOX Engine 経由の日本語 TTS（REST API）。
+
+    事前に VOICEVOX Engine を起動しておく必要がある。
+    GPU Docker:
+        docker run --gpus all -p 50021:50021 voicevox/voicevox_engine:nvidia-latest
+    CPU Docker:
+        docker run -p 50021:50021 voicevox/voicevox_engine:cpu-ubuntu20.04-latest
+
+    主なスピーカー ID:
+        1=四国めたん, 3=ずんだもん, 8=春日部つむぎ, 13=青山龍星, 14=冥鳴ひまり
+    """
+
+    def __init__(self, base_url: str = "http://localhost:50021", speaker: int = 3) -> None:
+        import urllib.request
+        self._base_url = base_url.rstrip("/")
+        self._speaker = speaker
+        try:
+            urllib.request.urlopen(f"{self._base_url}/version", timeout=5)
+        except Exception as e:
+            raise RuntimeError(
+                f"VOICEVOX Engine に接続できません ({base_url})\n"
+                f"Engine が起動しているか確認してください: {e}"
+            )
+        print(f"[TTS] VOICEVOX モード: speaker={speaker}, url={base_url}")
+
+    def synthesize(self, text: str) -> bytes:
+        import json
+        import urllib.parse
+        import urllib.request
+
+        text = _strip_markdown(text).strip()
+        if not text:
+            return b""
+
+        # Step 1: テキスト → 音声クエリ
+        query_url = (
+            f"{self._base_url}/audio_query"
+            f"?text={urllib.parse.quote(text)}&speaker={self._speaker}"
+        )
+        req = urllib.request.Request(query_url, method="POST")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            query = json.loads(resp.read().decode("utf-8"))
+
+        # Step 2: クエリ → WAV
+        synth_url = f"{self._base_url}/synthesis?speaker={self._speaker}"
+        data = json.dumps(query).encode("utf-8")
+        req = urllib.request.Request(
+            synth_url, data=data, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            wav_bytes = resp.read()
+
+        return _trim_trailing_silence(wav_bytes)
+
+
+# ---------------------------------------------------------------------------
+# Style-Bert-VITS2
+# ---------------------------------------------------------------------------
+
+class StyleBertVITS2Synthesizer:
+    """Style-Bert-VITS2 API サーバー経由の日本語 TTS。
+
+    事前に Style-Bert-VITS2 の API サーバーを起動しておく必要がある。
+    https://github.com/litagin02/Style-Bert-VITS2
+
+    起動例:
+        cd Style-Bert-VITS2
+        python server_fastapi.py
+    """
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:5000",
+        model_id: int = 0,
+        speaker_id: int = 0,
+        style: str = "Neutral",
+    ) -> None:
+        import urllib.request
+        self._base_url = base_url.rstrip("/")
+        self._model_id = model_id
+        self._speaker_id = speaker_id
+        self._style = style
+        try:
+            urllib.request.urlopen(f"{self._base_url}/models/info", timeout=5)
+        except Exception as e:
+            raise RuntimeError(
+                f"Style-Bert-VITS2 サーバーに接続できません ({base_url})\n"
+                f"サーバーが起動しているか確認してください: {e}"
+            )
+        print(f"[TTS] Style-Bert-VITS2 モード: model_id={model_id}, speaker_id={speaker_id}")
+
+    def synthesize(self, text: str) -> bytes:
+        import urllib.parse
+        import urllib.request
+
+        text = _strip_markdown(text).strip()
+        if not text:
+            return b""
+
+        params = urllib.parse.urlencode({
+            "text": text,
+            "model_id": self._model_id,
+            "speaker_id": self._speaker_id,
+            "style": self._style,
+        })
+        url = f"{self._base_url}/voice?{params}"
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            wav_bytes = resp.read()
+
+        return _trim_trailing_silence(wav_bytes)
+
+
+# ---------------------------------------------------------------------------
+# Coqui XTTS v2
+# ---------------------------------------------------------------------------
+
+class XTTSSynthesizer:
+    """Coqui XTTS v2 を使ったローカル TTS（GPU 推奨）。
+
+    初回起動時にモデルをダウンロードします（約 2GB）。
+    話者参照音声（speaker_wav）として 6〜10 秒の日本語 WAV ファイルが必要です。
+
+    インストール:
+        pip install TTS
+
+    config.yaml 例:
+        engine: "xtts"
+        xtts_speaker_wav: "models/tts/speaker.wav"
+    """
+
+    _SAMPLE_RATE = 24000
+
+    def __init__(
+        self,
+        model_name: str = "tts_models/multilingual/multi-dataset/xtts_v2",
+        language: str = "ja",
+        speaker_wav: str = "",
+        device: str = "cuda",
+    ) -> None:
+        if not speaker_wav:
+            raise ValueError(
+                "XTTSSynthesizer には speaker_wav（参照音声 WAV）が必須です。\n"
+                "6〜10 秒の日本語 WAV を用意して config.yaml の xtts_speaker_wav に指定してください。"
+            )
+        if not Path(speaker_wav).exists():
+            raise FileNotFoundError(f"speaker_wav が見つかりません: {speaker_wav}")
+
+        try:
+            from TTS.api import TTS as CoquiTTS
+        except ImportError as e:
+            raise ImportError(
+                "Coqui TTS が未インストールです。\n"
+                "pip install TTS を実行してください。"
+            ) from e
+
+        print(f"[TTS] XTTS v2 ロード中 (device={device}, model={model_name})...")
+        self._tts = CoquiTTS(model_name).to(device)
+        self._language = language
+        self._speaker_wav = speaker_wav
+        print("[TTS] XTTS v2 ロード完了")
+
+    def synthesize(self, text: str) -> bytes:
+        import array as arr
+
+        text = _strip_markdown(text).strip()
+        if not text:
+            return b""
+
+        wav_array = self._tts.tts(
+            text=text,
+            language=self._language,
+            speaker_wav=self._speaker_wav,
+        )
+
+        # float32 サンプル列 → int16 WAV bytes
+        samples = arr.array(
+            "h",
+            (max(-32768, min(32767, int(s * 32767))) for s in wav_array),
+        )
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(self._SAMPLE_RATE)
+            w.writeframes(samples.tobytes())
+        buf.seek(0)
+
+        return _trim_trailing_silence(buf.read())

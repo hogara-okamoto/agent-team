@@ -1,7 +1,7 @@
 # セットアップ手順
 
 > コンテナ再構築後や WSL2 環境への展開時はこの手順に従うこと。
-> 確認済み動作環境: NVIDIA GeForce RTX 3050 Ti / CUDA 13.1 / Driver 591.74 / Debian 11 (bullseye)
+> 確認済み動作環境: NVIDIA RTX 4000 Ada / 20GB VRAM / CUDA / Debian 11 (bullseye)
 
 ---
 
@@ -60,7 +60,7 @@ python -m venv .venv
 `~/.bashrc` の末尾に追記。
 
 ```bash
-VENV_SITE="$HOME/claude-code-test/agent-team/voice-chatbot/.venv/lib/python3.11/site-packages"
+VENV_SITE="$HOME/agent-team/.venv/lib/python3.11/site-packages"
 export LD_LIBRARY_PATH="${VENV_SITE}/nvidia/cublas/lib:${VENV_SITE}/nvidia/cudnn/lib:${LD_LIBRARY_PATH:-}"
 ```
 
@@ -74,15 +74,51 @@ curl -fsSL https://ollama.com/install.sh | sh
 # 起動（コンテナ再起動のたびに必要）
 ollama serve > /tmp/ollama.log 2>&1 &
 
-# モデル取得（初回のみ）
-ollama pull llama3.2:3b
+# モデル取得（初回のみ・約 9GB）
+ollama pull qwen2.5:14b
 ```
 
 > WSL2 は systemd が動かないため `ollama serve` を手動で起動すること。
 
 ---
 
-## 6. FastAPI バックエンドの起動
+## 6. VOICEVOX Engine（Docker）
+
+VOICEVOX は Docker コンテナとして起動する。GPU 版を推奨（RTX 4000 Ada 対応）。
+
+```bash
+# 初回起動（--restart=always で Docker 起動時に自動再起動）
+docker run -d --gpus all --restart=always \
+  -p 50021:50021 voicevox/voicevox_engine:nvidia-latest
+
+# 起動確認
+curl http://localhost:50021/version
+
+# GPU なし環境（CPU 版）
+# docker run -d --restart=always -p 50021:50021 voicevox/voicevox_engine:latest
+```
+
+**Docker Desktop 自動起動設定（Windows）**:
+`Docker Desktop → Settings → General → "Start Docker Desktop when you sign in"` にチェックを入れると、
+PC 起動時に Docker が自動起動し、VOICEVOX コンテナも自動で起動する。
+
+**スピーカー番号の目安:**
+
+| 番号 | キャラクター |
+|---|---|
+| 1 | 四国めたん |
+| 3 | ずんだもん |
+| 8 | 春日部つむぎ |
+| 13 | ナースロボ＿タイプT |
+
+`config.yaml` の `voicevox_speaker` で変更可能。全スピーカー一覧:
+```bash
+curl http://localhost:50021/speakers | python3 -m json.tool | grep '"name"'
+```
+
+---
+
+## 7. FastAPI バックエンドの起動
 
 ```bash
 cd agent-team/backend
@@ -99,10 +135,14 @@ curl http://localhost:8000/health
 
 ---
 
-## 7. Electron フロントエンドの起動（Windows 側）
+## 8. Electron フロントエンドの起動（Windows 側）
+
+リポジトリは Windows 側（例: `C:\Users\<user>\projects\agent-team`）にクローンすること。
+WSL2 の UNC パス（`\\wsl.localhost\...`）では `npm install` が失敗する。
 
 ```bash
-cd agent-team/frontend
+# Windows 側のターミナル（PowerShell / Git Bash）
+cd C:\Users\<user>\projects\agent-team\frontend
 
 # 依存パッケージ（初回のみ）
 npm install
@@ -115,19 +155,22 @@ npm start
 npm run dev
 ```
 
-> **マイク権限**: `session.setPermissionRequestHandler` で自動許可済み。
+> **マイク権限**: `session.setPermissionRequestHandler` で自動許可済み（Electron 33 / Chromium 130 対応）。
 > 初回起動時に Windows がマイクアクセスを確認する場合は「許可」を選択すること。
 
 ---
 
-## TTS について
+## TTS エンジンの選択
 
-現在の TTS エンジンは **open_jtalk**（`config.yaml` の `engine: openjtalk`）。
+`voice-chatbot/config.yaml` の `tts.engine` で切り替える。
 
-- piper バイナリ（rhasspy 2023.11.14-2）は OpenJTalk 非対応のため廃止。
-- open_jtalk はシステムパッケージとしてインストール済みであること。
-
-piper に戻す場合は `config.yaml` で `engine: piper` に変更する。
+| エンジン | 品質 | 追加要件 |
+|---|---|---|
+| `voicevox` | 高品質 ⭐推奨 | Docker（手順6） |
+| `style_bert_vits2` | 最高品質 | Style-Bert-VITS2 サーバー起動 |
+| `xtts` | 高品質（多言語） | `pip install TTS`、参照 WAV 必要 |
+| `openjtalk` | 標準 | 追加インストール不要（手順1） |
+| `piper` | 標準 | piper バイナリ別途必要 |
 
 ---
 
@@ -142,3 +185,6 @@ piper に戻す場合は `config.yaml` で `engine: piper` に変更する。
 | Ollama 接続エラー | サーバー未起動 | `ollama serve &` を実行 |
 | `open_jtalk: command not found` | open-jtalk 未インストール | 手順1を実行 |
 | バックエンドが 503 を返す | モデル未初期化 | `/health` でどのコンポーネントが失敗しているか確認 |
+| VOICEVOX に接続できない | コンテナ未起動 | `docker ps` で確認、未起動なら手順6を実行 |
+| npm install が EPERM/UNC エラー | WSL2 パスで実行している | Windows 側のフォルダ（`C:\...`）でコマンドを実行する |
+| STT が初回起動時に遅い | large-v3 モデルのダウンロード | 約 3GB をダウンロード中（`models/whisper/` に保存後は高速起動） |

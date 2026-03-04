@@ -14,13 +14,13 @@
 
 ---
 
-## 現在の状態（2026-03-01）
+## 現在の状態（2026-03-04）
 
 | コンポーネント | 状態 | 詳細 |
 |---|---|---|
-| STT（音声認識） | ✅ 完了 | faster-whisper（GPU: RTX 3050 Ti） |
-| LLM | ✅ 完了 | Ollama + llama3.2:3b |
-| TTS（日本語音声合成） | ✅ 完了 | open_jtalk |
+| STT（音声認識） | ✅ 完了 | faster-whisper large-v3（GPU: RTX 4000 Ada） |
+| LLM | ✅ 完了 | Ollama + qwen2.5:14b |
+| TTS（日本語音声合成） | ✅ 完了 | VOICEVOX（主）/ open_jtalk / Style-Bert-VITS2 / XTTS v2 切り替え対応 |
 | FastAPI バックエンド | ✅ 完了 | `backend/` — `/transcribe` `/chat` `/synthesize` `/health` |
 | Electron フロントエンド | ✅ 完了 | `frontend/` — 録音・STT・LLM・TTS 再生の完全ループ |
 | マイク入力 | ✅ 完了 | Electron Web Audio API（Web 側でマイク取得） |
@@ -37,7 +37,7 @@ agent-team/
 │   ├── src/
 │   │   ├── stt/          # faster-whisper ラッパー
 │   │   ├── llm/          # Ollama クライアント
-│   │   ├── tts/          # open_jtalk / piper シンセサイザー
+│   │   ├── tts/          # openjtalk / voicevox / style_bert_vits2 / xtts / piper シンセサイザー
 │   │   └── config/       # Settings（pydantic）
 │   └── requirements.txt
 ├── backend/              # FastAPI バックエンド（WSL2 で起動）
@@ -61,9 +61,9 @@ agent-team/
 
 | 役割 | 技術 |
 |---|---|
-| STT | faster-whisper（GPU: RTX 3050 Ti） |
-| LLM | Ollama / llama3.2:3b |
-| TTS | open_jtalk |
+| STT | faster-whisper large-v3（GPU: RTX 4000 Ada / 20GB VRAM） |
+| LLM | Ollama / qwen2.5:14b |
+| TTS | VOICEVOX（主）/ open_jtalk / Style-Bert-VITS2 / XTTS v2（`config.yaml` で切り替え） |
 | バックエンド API | FastAPI + uvicorn（Python） |
 | フロントエンド | Electron + React + Vite |
 | 音声録音 | Web Audio API（ScriptProcessor → PCM → WAV） |

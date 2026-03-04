@@ -20,7 +20,7 @@
 
 - **完全ローカル動作** — 音声・テキストが外部に送信されない
 - **日本語対応** — STT / TTS ともに日本語に最適化
-- **低遅延** — GPU（RTX 3050 Ti）で faster-whisper を高速実行
+- **低遅延** — GPU（RTX 4000 Ada / 20GB VRAM）で faster-whisper large-v3 を高速実行
 - **テキスト入力フォールバック** — マイクなしでも LLM と会話できる
 - **コンポーネント障害に強い** — STT/LLM/TTS のどれかが未起動でも他は動作継続
 
@@ -53,9 +53,9 @@
 
 | 役割 | 技術 |
 |---|---|
-| STT | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) |
-| LLM | [Ollama](https://ollama.com/) + llama3.2:3b |
-| TTS | [open_jtalk](https://open-jtalk.sourceforge.net/) |
+| STT | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) large-v3 |
+| LLM | [Ollama](https://ollama.com/) + qwen2.5:14b |
+| TTS | [VOICEVOX](https://voicevox.hiroshiba.jp/)（主）/ [open_jtalk](https://open-jtalk.sourceforge.net/) / Style-Bert-VITS2 / XTTS v2（切り替え対応） |
 | バックエンド | [FastAPI](https://fastapi.tiangolo.com/) + uvicorn |
 | フロントエンド | [Electron](https://www.electronjs.org/) + [React](https://react.dev/) + [Vite](https://vitejs.dev/) |
 | 実行環境 | WSL2 / Debian 11 + Windows 11 |
@@ -67,8 +67,9 @@
 | 項目 | 要件 |
 |---|---|
 | OS | Windows 11 + WSL2（Debian/Ubuntu） |
-| GPU | NVIDIA GPU（CUDA 対応）推奨 |
-| RAM | 8 GB 以上 |
+| GPU | NVIDIA GPU（CUDA 対応）推奨 ※ RTX 4000 Ada / 20GB VRAM で動作確認済み |
+| VRAM | 12 GB 以上推奨（qwen2.5:14b 約9GB + Whisper large-v3 約3GB） |
+| RAM | 16 GB 以上推奨 |
 | Node.js | v18 以上 |
 | Python | 3.11 以上 |
 
@@ -116,12 +117,27 @@ python -m venv .venv
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ollama serve > /tmp/ollama.log 2>&1 &
-ollama pull llama3.2:3b
+ollama pull qwen2.5:14b
 ```
 
-### 6. フロントエンド依存パッケージ
+### 6. VOICEVOX Engine（Docker / WSL2 側）
 
 ```bash
+# GPU 版（RTX 4000 Ada など NVIDIA GPU が必要）
+docker run -d --gpus all --restart=always \
+  -p 50021:50021 voicevox/voicevox_engine:nvidia-latest
+
+# 起動確認
+curl http://localhost:50021/version
+```
+
+> 初回のみ `docker update --restart=always voicevox` 相当の設定が `--restart=always` で自動適用される。
+> Docker Desktop を自動起動設定にすれば PC 再起動後も自動で VOICEVOX が起動する。
+
+### 7. フロントエンド依存パッケージ
+
+```bash
+# Windows 側（C:\Users\<user>\projects\agent-team\frontend）
 cd frontend
 npm install
 ```
@@ -135,13 +151,14 @@ npm install
 ```bash
 cd agent-team/backend
 ollama serve > /tmp/ollama.log 2>&1 &   # Ollama が未起動の場合
-python3 main.py   #.venvの環境で実行
+# VOICEVOX は Docker Desktop 起動時に自動起動（--restart=always 設定済みの場合）
+python3 main.py
 ```
 
-**ターミナル2（Windows / WSL2）** — Electron アプリを起動
+**ターミナル2（Windows）** — Electron アプリを起動
 
 ```bash
-cd agent-team/frontend
+# C:\Users\<user>\projects\agent-team\frontend
 npm run build   # 初回またはコード変更後
 npm start
 ```
@@ -158,7 +175,7 @@ agent-team/
 │   ├── src/
 │   │   ├── stt/            # faster-whisper ラッパー
 │   │   ├── llm/            # Ollama クライアント
-│   │   ├── tts/            # open_jtalk / piper シンセサイザー
+│   │   ├── tts/            # openjtalk / voicevox / style_bert_vits2 / xtts / piper シンセサイザー
 │   │   └── config/         # Settings（pydantic）
 │   └── requirements.txt
 ├── backend/                # FastAPI バックエンド

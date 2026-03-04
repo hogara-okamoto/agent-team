@@ -3,13 +3,37 @@ const path = require('path')
 
 const isDev = process.env.NODE_ENV === 'development'
 
+// WSL2 環境では GPU が使えないため無効化してソフトウェアレンダリングに統一
+// /proc/version に Microsoft の文字列があれば WSL と判断する
+const isWSL = (() => {
+  try {
+    return require('fs').readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft')
+  } catch {
+    return false
+  }
+})()
+if (isWSL) {
+  app.commandLine.appendSwitch('disable-gpu')
+  app.commandLine.appendSwitch('disable-software-rasterizer')
+}
+
 function setupPermissions() {
   // マイクアクセスを明示的に許可（Electron v18+ のデフォルト拒否を回避）
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
-    return permission === 'media'
+  // Electron 33 / Chromium 130 以降は 'microphone' / 'audioCapture' でも
+  // 権限チェックが走るため、複数名を許可する。
+  const MEDIA_PERMISSIONS = new Set(['media', 'microphone', 'audioCapture'])
+
+  session.defaultSession.setPermissionCheckHandler((_wc, permission, _origin, details) => {
+    if (permission === 'media') {
+      // mediaType が video のみの場合はカメラ専用なので許可しない
+      const t = details?.mediaType
+      return t === 'audio' || t === 'unknown' || t === undefined
+    }
+    return MEDIA_PERMISSIONS.has(permission)
   })
+
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(permission === 'media')
+    callback(MEDIA_PERMISSIONS.has(permission))
   })
 }
 

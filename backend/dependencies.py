@@ -29,7 +29,8 @@ async def lifespan(app: FastAPI):
 
     try:
         from src.config import Settings
-        settings = Settings.from_yaml("config.yaml")
+        _config_path = Path(__file__).parent.parent / "voice-chatbot" / "config.yaml"
+        settings = Settings.from_yaml(str(_config_path))
     except Exception as e:
         print(f"[WARNING] 設定ファイルの読み込みに失敗しました（デフォルト値を使用）: {e}")
         from src.config import Settings
@@ -67,11 +68,34 @@ async def lifespan(app: FastAPI):
 
     # --- TTS ---
     try:
-        from src.tts.synthesizer import OpenJTalkSynthesizer, PiperSynthesizer
-        if settings.tts.engine == "openjtalk":
+        from src.tts.synthesizer import (
+            OpenJTalkSynthesizer, PiperSynthesizer,
+            VOICEVOXSynthesizer, StyleBertVITS2Synthesizer, XTTSSynthesizer,
+        )
+        engine = settings.tts.engine
+        if engine == "openjtalk":
             _tts_synthesizer = OpenJTalkSynthesizer(
                 dict_dir=settings.tts.openjtalk_dict,
                 voice_path=settings.tts.openjtalk_voice,
+            )
+        elif engine == "voicevox":
+            _tts_synthesizer = VOICEVOXSynthesizer(
+                base_url=settings.tts.voicevox_url,
+                speaker=settings.tts.voicevox_speaker,
+            )
+        elif engine == "style_bert_vits2":
+            _tts_synthesizer = StyleBertVITS2Synthesizer(
+                base_url=settings.tts.style_bert_vits2_url,
+                model_id=settings.tts.style_bert_vits2_model_id,
+                speaker_id=settings.tts.style_bert_vits2_speaker_id,
+                style=settings.tts.style_bert_vits2_style,
+            )
+        elif engine == "xtts":
+            _tts_synthesizer = XTTSSynthesizer(
+                model_name=settings.tts.xtts_model,
+                language=settings.tts.xtts_language,
+                speaker_wav=settings.tts.xtts_speaker_wav,
+                device=settings.tts.xtts_device,
             )
         else:
             _tts_synthesizer = PiperSynthesizer(

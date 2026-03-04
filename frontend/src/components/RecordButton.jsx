@@ -54,7 +54,8 @@ export default function RecordButton({ onRecord, onError, disabled }) {
       processor.connect(audioCtx.destination)
       setIsRecording(true)
     } catch (err) {
-      onError?.(`マイクアクセス失敗: ${err.message}`)
+      // err.name 例: NotAllowedError（権限拒否）/ NotFoundError（デバイス未検出）
+      onError?.(`マイクアクセス失敗 [${err.name}]: ${err.message}`)
     }
   }
 

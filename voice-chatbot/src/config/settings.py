@@ -46,10 +46,28 @@ class LLMConfig(BaseModel):
 
 
 class TTSConfig(BaseModel):
-    engine: str = "openjtalk"
+    engine: str = "openjtalk"  # openjtalk / voicevox / style_bert_vits2 / xtts / piper
+
     # openjtalk 設定
     openjtalk_dict: str = "/var/lib/mecab/dic/open-jtalk/naist-jdic"
     openjtalk_voice: str = "/usr/share/hts-voice/nitech-jp-atr503-m001/nitech_jp_atr503_m001.htsvoice"
+
+    # voicevox 設定
+    voicevox_url: str = "http://localhost:50021"
+    voicevox_speaker: int = 3  # 3=ずんだもん, 1=四国めたん, 8=春日部つむぎ
+
+    # style_bert_vits2 設定
+    style_bert_vits2_url: str = "http://localhost:5000"
+    style_bert_vits2_model_id: int = 0
+    style_bert_vits2_speaker_id: int = 0
+    style_bert_vits2_style: str = "Neutral"
+
+    # xtts 設定
+    xtts_model: str = "tts_models/multilingual/multi-dataset/xtts_v2"
+    xtts_language: str = "ja"
+    xtts_speaker_wav: str = ""   # 必須: 6〜10 秒の日本語 WAV ファイルパス
+    xtts_device: str = "cuda"
+
     # piper 設定（engine: piper の場合のみ使用）
     model_path: str = "models/tts/ja_JP-test-medium.onnx"
     speaker_id: Optional[int] = None

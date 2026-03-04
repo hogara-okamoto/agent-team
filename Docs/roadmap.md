@@ -11,16 +11,16 @@
 
 ---
 
-## 現在の動作状況（2026-03-01 時点）
+## 現在の動作状況（2026-03-04 時点）
 
 | コンポーネント | 状態 | 実装 |
 |---|---|---|
-| STT（音声認識） | ✅ 完了 | faster-whisper（GPU対応） |
-| LLM（推論） | ✅ 完了 | Ollama + llama3.2:3b |
-| TTS（日本語音声合成） | ✅ 完了 | open_jtalk |
+| STT（音声認識） | ✅ 完了 | faster-whisper large-v3（GPU: RTX 4000 Ada） |
+| LLM（推論） | ✅ 完了 | Ollama + qwen2.5:14b（keep_alive 5分） |
+| TTS（日本語音声合成） | ✅ 完了 | VOICEVOX（主）/ open_jtalk / Style-Bert-VITS2 / XTTS v2 切り替え対応 |
 | FastAPI バックエンド | ✅ 完了 | `/transcribe` `/chat` `/synthesize` `/health` |
 | Electron フロントエンド | ✅ 完了 | 録音UI・会話ログ・テキスト入力 |
-| マイク入力 | ✅ 完了 | Electron Web Audio API |
+| マイク入力 | ✅ 完了 | Electron Web Audio API（Electron 33 / Chromium 130 対応） |
 | スピーカー出力（リアルタイム） | ✅ 完了 | Electron `<Audio>` 再生 |
 | エンドツーエンド会話ループ | ✅ 完了 | 録音→STT→LLM→TTS→再生 動作確認済み |
 
@@ -61,10 +61,15 @@
 
 | 課題 | 解決策 |
 |---|---|
-| Electron でマイクが使えない | `session.setPermissionRequestHandler` でメディアアクセスを許可 |
+| Electron でマイクが使えない | `session.setPermissionRequestHandler` でメディアアクセスを許可（Electron 33 / Chromium 130 の権限名変更に対応） |
 | 日本語フォントが□□□になる | Noto Sans CJK JP をシステムインストール＋Google Fonts フォールバック |
 | バックエンド起動失敗で全体クラッシュ | lifespan 内で各コンポーネントの初期化エラーを捕捉し 503 で継続 |
 | WAV 形式の互換性 | Web Audio API + 手書き WAV エンコーダで PCM→WAV 変換（soundfile 互換） |
+| config.yaml が読み込めない | `dependencies.py` の設定ファイルパスを絶対パスに修正 |
+| open_jtalk で長文が途中で切れる | 文をセンテンス単位に分割し WAV を結合（`_split_sentences` + `_concat_wavs`） |
+| TTS が `**` マークダウンで停止する | `_strip_markdown()` でマークダウン記号を除去 / system_prompt で LLM に禁止指示 |
+| TTS 末尾の音が不自然に伸びる | 末尾無音をトリム（`_trim_trailing_silence`）＋文末に `。` を付加して prosody を安定化 |
+| open_jtalk の音質が長文で劣化 | 20文字以下のチャンクに分割して合成（`_BREAK_RE` + `_MAX_CHARS = 20`） |
 
 ---
 
