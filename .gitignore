@@ -25,6 +25,7 @@ tmp/
 .claude/
 .vscode/
 .cursor/
+.devcontainer/
 
 # --- アプリの出力データ ---
 *.wav
