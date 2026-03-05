@@ -3,11 +3,16 @@ import { encodeWAV } from '../audioUtils'
 
 const SAMPLE_RATE = 16000
 
+// 無音自動停止の設定
+const SILENCE_RMS_THRESHOLD = 0.01  // この音量以下を「無音」と判定
+const SILENCE_DURATION_MS   = 5000  // 無音がこの時間続いたら自動停止（ms）
+
 /**
  * マイク録音ボタン。
  * - 起動時に利用可能なマイクデバイスを列挙して表示
  * - Web Audio API（ScriptProcessor）で PCM を収集し WAV Blob を onRecord に渡す
  * - エラーは alert ではなく onError コールバックで親に通知
+ * - 発話後に SILENCE_DURATION_MS 以上無音が続くと自動停止（VAD）
  */
 export default function RecordButton({ onRecord, onError, disabled, externalTrigger = 0 }) {
   const [isRecording, setIsRecording] = useState(false)
@@ -16,6 +21,11 @@ export default function RecordButton({ onRecord, onError, disabled, externalTrig
   const audioCtxRef = useRef(null)
   const processorRef = useRef(null)
   const samplesRef = useRef([])
+  // VAD 用: 一度でも発話を検出したか / 無音開始タイムスタンプ
+  const speechDetectedRef = useRef(false)
+  const silenceStartRef = useRef(null)
+  // stopRecording を onaudioprocess 内から呼べるように ref で保持
+  const stopRecordingRef = useRef(null)
 
   // トレイ/ホットキーからの外部トリガーで録音開始
   useEffect(() => {
@@ -52,9 +62,30 @@ export default function RecordButton({ onRecord, onError, disabled, externalTrig
       processorRef.current = processor
       samplesRef.current = []
 
+      // VAD 状態をリセット
+      speechDetectedRef.current = false
+      silenceStartRef.current = null
+
       processor.onaudioprocess = (e) => {
         const chunk = new Float32Array(e.inputBuffer.getChannelData(0))
         samplesRef.current.push(chunk)
+
+        // RMS で音量を計算
+        const rms = Math.sqrt(chunk.reduce((sum, s) => sum + s * s, 0) / chunk.length)
+
+        if (rms > SILENCE_RMS_THRESHOLD) {
+          // 発話あり: 無音タイマーをリセット
+          speechDetectedRef.current = true
+          silenceStartRef.current = null
+        } else if (speechDetectedRef.current) {
+          // 発話後の無音: タイマー開始
+          if (silenceStartRef.current === null) {
+            silenceStartRef.current = Date.now()
+          } else if (Date.now() - silenceStartRef.current >= SILENCE_DURATION_MS) {
+            // 5秒無音 → 自動停止
+            stopRecordingRef.current?.()
+          }
+        }
       }
 
       source.connect(processor)
@@ -67,11 +98,14 @@ export default function RecordButton({ onRecord, onError, disabled, externalTrig
   }
 
   const stopRecording = async () => {
+    // 二重呼び出し防止
+    if (!streamRef.current) return
     setIsRecording(false)
 
     processorRef.current?.disconnect()
     await audioCtxRef.current?.close()
     streamRef.current?.getTracks().forEach((t) => t.stop())
+    streamRef.current = null
 
     const totalLength = samplesRef.current.reduce((n, c) => n + c.length, 0)
     const allSamples = new Float32Array(totalLength)
@@ -85,6 +119,9 @@ export default function RecordButton({ onRecord, onError, disabled, externalTrig
     const blob = new Blob([wavBuffer], { type: 'audio/wav' })
     await onRecord(blob)
   }
+
+  // stopRecording を ref に同期（onaudioprocess から最新版を呼べるように）
+  stopRecordingRef.current = stopRecording
 
   return (
     <div className="record-wrap">
