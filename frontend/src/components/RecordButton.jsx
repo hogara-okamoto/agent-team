@@ -9,13 +9,20 @@ const SAMPLE_RATE = 16000
  * - Web Audio API（ScriptProcessor）で PCM を収集し WAV Blob を onRecord に渡す
  * - エラーは alert ではなく onError コールバックで親に通知
  */
-export default function RecordButton({ onRecord, onError, disabled }) {
+export default function RecordButton({ onRecord, onError, disabled, externalTrigger = 0 }) {
   const [isRecording, setIsRecording] = useState(false)
   const [deviceLabel, setDeviceLabel] = useState('')
   const streamRef = useRef(null)
   const audioCtxRef = useRef(null)
   const processorRef = useRef(null)
   const samplesRef = useRef([])
+
+  // トレイ/ホットキーからの外部トリガーで録音開始
+  useEffect(() => {
+    if (externalTrigger > 0 && !isRecording && !disabled) {
+      startRecording()
+    }
+  }, [externalTrigger])
 
   // マイクデバイス名を取得（権限取得後に label が埋まる）
   useEffect(() => {

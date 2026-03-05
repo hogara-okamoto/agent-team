@@ -18,12 +18,21 @@ export default function App() {
   const [health, setHealth] = useState(null)
   const [textInput, setTextInput] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+  // トレイ/ホットキーから録音開始を受け取るカウンター
+  const [recordTrigger, setRecordTrigger] = useState(0)
 
   // 起動時にバックエンドのヘルスを確認
   useEffect(() => {
     checkHealth()
       .then(setHealth)
       .catch(() => setHealth({ status: 'error', components: {} }))
+  }, [])
+
+  // システムトレイ・グローバルホットキーからの録音開始イベントを購読
+  useEffect(() => {
+    window.electronAPI?.onStartRecording?.(() => {
+      setRecordTrigger((t) => t + 1)
+    })
   }, [])
 
   const appendMessage = (role, text) =>
@@ -137,6 +146,7 @@ export default function App() {
             onRecord={handleRecord}
             onError={setErrorMsg}
             disabled={isProcessing}
+            externalTrigger={recordTrigger}
           />
           <button
             className="clear-btn"

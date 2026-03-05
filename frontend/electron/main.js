@@ -1,10 +1,9 @@
-const { app, BrowserWindow, session } = require('electron')
+const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, session } = require('electron')
 const path = require('path')
 
 const isDev = process.env.NODE_ENV === 'development'
 
 // WSL2 環境では GPU が使えないため無効化してソフトウェアレンダリングに統一
-// /proc/version に Microsoft の文字列があれば WSL と判断する
 const isWSL = (() => {
   try {
     return require('fs').readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft')
@@ -18,14 +17,10 @@ if (isWSL) {
 }
 
 function setupPermissions() {
-  // マイクアクセスを明示的に許可（Electron v18+ のデフォルト拒否を回避）
-  // Electron 33 / Chromium 130 以降は 'microphone' / 'audioCapture' でも
-  // 権限チェックが走るため、複数名を許可する。
   const MEDIA_PERMISSIONS = new Set(['media', 'microphone', 'audioCapture'])
 
   session.defaultSession.setPermissionCheckHandler((_wc, permission, _origin, details) => {
     if (permission === 'media') {
-      // mediaType が video のみの場合はカメラ専用なので許可しない
       const t = details?.mediaType
       return t === 'audio' || t === 'unknown' || t === undefined
     }
@@ -35,6 +30,53 @@ function setupPermissions() {
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(MEDIA_PERMISSIONS.has(permission))
   })
+}
+
+function createTray(win) {
+  const iconPath = path.join(__dirname, 'icon.png')
+  console.log('[Tray] icon path:', iconPath)
+  let icon = nativeImage.createFromPath(iconPath)
+  console.log('[Tray] icon isEmpty:', icon.isEmpty())
+
+  // アイコン読み込み失敗時は 1x1 の透明画像で代替（トレイは表示される）
+  if (icon.isEmpty()) {
+    console.warn('[Tray] icon load failed, using fallback')
+    icon = nativeImage.createFromDataURL(
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQAABjE+ibYAAAAASUVORK5CYII='
+    )
+  }
+
+  const tray = new Tray(icon)
+  tray.setToolTip('音声エージェント')
+
+  const menu = Menu.buildFromTemplate([
+    {
+      label: '表示',
+      click: () => { win.show(); win.focus() },
+    },
+    {
+      label: '録音開始',
+      click: () => {
+        win.show()
+        win.focus()
+        win.webContents.send('start-recording')
+      },
+    },
+    { type: 'separator' },
+    {
+      label: '終了',
+      click: () => {
+        app.isQuitting = true
+        app.quit()
+      },
+    },
+  ])
+  tray.setContextMenu(menu)
+
+  // ダブルクリックでウィンドウを表示
+  tray.on('double-click', () => { win.show(); win.focus() })
+
+  return tray
 }
 
 function createWindow() {
@@ -58,21 +100,46 @@ function createWindow() {
     win.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
-  // F12 で DevTools を開閉（本番でも原因調査に使用可）
+  // F12 で DevTools を開閉
   win.webContents.on('before-input-event', (_event, input) => {
     if (input.key === 'F12') win.webContents.toggleDevTools()
   })
+
+  // × ボタンでウィンドウを非表示（アプリは終了しない）
+  win.on('close', (event) => {
+    if (!app.isQuitting) {
+      event.preventDefault()
+      win.hide()
+    }
+  })
+
+  return win
 }
+
+app.isQuitting = false
 
 app.whenReady().then(() => {
   setupPermissions()
-  createWindow()
+  const win = createWindow()
+  createTray(win)
+
+  // グローバルホットキー: Ctrl+Shift+Space → ウィンドウ表示 + 録音開始
+  globalShortcut.register('Ctrl+Shift+Space', () => {
+    win.show()
+    win.focus()
+    win.webContents.send('start-recording')
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+})
+
+// トレイ常駐のため window-all-closed での自動終了を無効化
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  // 何もしない（トレイに常駐）
 })
