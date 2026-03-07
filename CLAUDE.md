@@ -14,13 +14,13 @@
 
 ---
 
-## 現在の状態（2026-03-05）
+## 現在の状態（2026-03-07）
 
 | コンポーネント | 状態 | 詳細 |
 |---|---|---|
-| STT（音声認識） | ✅ 完了 | faster-whisper large-v3（GPU: RTX 4000 Ada） |
-| LLM | ✅ 完了 | Ollama + qwen2.5:14b |
-| TTS（日本語音声合成） | ✅ 完了 | VOICEVOX（主）/ open_jtalk / Style-Bert-VITS2 / XTTS v2 切り替え対応 |
+| STT（音声認識） | ✅ 完了 | faster-whisper large-v3-turbo（GPU: RTX 4000 Ada / 12GB VRAM） |
+| LLM | ✅ 完了 | Ollama + qwen3.5:9b（thinking: false で高速化） |
+| TTS（日本語音声合成） | ✅ 完了 | VOICEVOX（主）/ open_jtalk / Kokoro-82M 切り替え対応 |
 | FastAPI バックエンド | ✅ 完了 | `backend/` — `/transcribe` `/chat` `/synthesize` `/health` |
 | Electron フロントエンド | ✅ 完了 | `frontend/` — 録音・STT・LLM・TTS 再生の完全ループ |
 | マイク入力 | ✅ 完了 | Electron Web Audio API（Web 側でマイク取得） |
@@ -28,7 +28,7 @@
 | エンドツーエンド会話ループ | ✅ 完了 | 録音 → STT → LLM → TTS → 再生 が動作確認済み |
 | システムトレイ常駐 | ✅ 完了 | Tray アイコン・コンテキストメニュー・×で非表示 |
 | グローバルホットキー | ✅ 完了 | Ctrl+Shift+Space で表示＋録音自動開始 |
-| 無音自動停止（VAD） | ✅ 完了 | 発話後 5 秒無音で録音を自動停止 |
+| 無音自動停止（VAD） | ✅ 完了 | 発話後 3 秒無音で録音を自動停止 |
 
 ---
 
@@ -40,7 +40,7 @@ agent-team/
 │   ├── src/
 │   │   ├── stt/          # faster-whisper ラッパー
 │   │   ├── llm/          # Ollama クライアント
-│   │   ├── tts/          # openjtalk / voicevox / style_bert_vits2 / xtts / piper シンセサイザー
+│   │   ├── tts/          # openjtalk / voicevox / kokoro / piper シンセサイザー
 │   │   └── config/       # Settings（pydantic）
 │   └── requirements.txt
 ├── backend/              # FastAPI バックエンド（WSL2 で起動）
@@ -64,9 +64,9 @@ agent-team/
 
 | 役割 | 技術 |
 |---|---|
-| STT | faster-whisper large-v3（GPU: RTX 4000 Ada / 20GB VRAM） |
-| LLM | Ollama / qwen2.5:14b |
-| TTS | VOICEVOX（主）/ open_jtalk / Style-Bert-VITS2 / XTTS v2（`config.yaml` で切り替え） |
+| STT | faster-whisper large-v3-turbo（GPU: RTX 4000 Ada / 12GB VRAM） |
+| LLM | Ollama / qwen3.5:9b（thinking: false） |
+| TTS | VOICEVOX（主）/ open_jtalk / Kokoro-82M（`config.yaml` で切り替え） |
 | バックエンド API | FastAPI + uvicorn（Python） |
 | フロントエンド | Electron + React + Vite |
 | 音声録音 | Web Audio API（ScriptProcessor → PCM → WAV） |

@@ -5,7 +5,7 @@ const SAMPLE_RATE = 16000
 
 // 無音自動停止の設定
 const SILENCE_RMS_THRESHOLD = 0.01  // この音量以下を「無音」と判定
-const SILENCE_DURATION_MS   = 5000  // 無音がこの時間続いたら自動停止（ms）
+const SILENCE_DURATION_MS   = 3000  // 無音がこの時間続いたら自動停止（ms）
 
 /**
  * マイク録音ボタン。

@@ -20,12 +20,12 @@
 
 - **完全ローカル動作** — 音声・テキストが外部に送信されない
 - **日本語対応** — STT / TTS ともに日本語に最適化
-- **低遅延** — GPU（RTX 4000 Ada / 20GB VRAM）で faster-whisper large-v3 を高速実行
+- **低遅延** — GPU（RTX 4000 Ada / 12GB VRAM）で faster-whisper large-v3-turbo を高速実行
 - **テキスト入力フォールバック** — マイクなしでも LLM と会話できる
 - **コンポーネント障害に強い** — STT/LLM/TTS のどれかが未起動でも他は動作継続
 - **システムトレイ常駐** — × ボタンで非表示にしてもバックグラウンドで常駐
 - **グローバルホットキー** — `Ctrl+Shift+Space` でいつでも即呼び出し・録音開始
-- **無音自動停止（VAD）** — 発話後 5 秒無音で録音を自動停止
+- **無音自動停止（VAD）** — 発話後 3 秒無音で録音を自動停止
 
 ---
 
@@ -56,9 +56,9 @@
 
 | 役割 | 技術 |
 |---|---|
-| STT | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) large-v3 |
-| LLM | [Ollama](https://ollama.com/) + qwen2.5:14b |
-| TTS | [VOICEVOX](https://voicevox.hiroshiba.jp/)（主）/ [open_jtalk](https://open-jtalk.sourceforge.net/) / Style-Bert-VITS2 / XTTS v2（切り替え対応） |
+| STT | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) large-v3-turbo |
+| LLM | [Ollama](https://ollama.com/) + qwen3.5:9b（thinking: false） |
+| TTS | [VOICEVOX](https://voicevox.hiroshiba.jp/)（主）/ [open_jtalk](https://open-jtalk.sourceforge.net/) / [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)（切り替え対応） |
 | バックエンド | [FastAPI](https://fastapi.tiangolo.com/) + uvicorn |
 | フロントエンド | [Electron](https://www.electronjs.org/) + [React](https://react.dev/) + [Vite](https://vitejs.dev/) |
 | 実行環境 | WSL2 / Debian 11 + Windows 11 |
@@ -70,8 +70,8 @@
 | 項目 | 要件 |
 |---|---|
 | OS | Windows 11 + WSL2（Debian/Ubuntu） |
-| GPU | NVIDIA GPU（CUDA 対応）推奨 ※ RTX 4000 Ada / 20GB VRAM で動作確認済み |
-| VRAM | 12 GB 以上推奨（qwen2.5:14b 約9GB + Whisper large-v3 約3GB） |
+| GPU | NVIDIA GPU（CUDA 対応）推奨 ※ RTX 4000 Ada / 12GB VRAM で動作確認済み |
+| VRAM | 12 GB 以上推奨（qwen3.5:9b 約7GB + Whisper large-v3-turbo 約1.5GB） |
 | RAM | 16 GB 以上推奨 |
 | Node.js | v18 以上 |
 | Python | 3.11 以上 |
@@ -120,7 +120,7 @@ python -m venv .venv
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ollama serve > /tmp/ollama.log 2>&1 &
-ollama pull qwen2.5:14b
+ollama pull qwen3.5:9b
 ```
 
 ### 6. VOICEVOX Engine（Docker / WSL2 側）
@@ -178,7 +178,7 @@ agent-team/
 │   ├── src/
 │   │   ├── stt/            # faster-whisper ラッパー
 │   │   ├── llm/            # Ollama クライアント
-│   │   ├── tts/            # openjtalk / voicevox / style_bert_vits2 / xtts / piper シンセサイザー
+│   │   ├── tts/            # openjtalk / voicevox / kokoro / piper シンセサイザー
 │   │   └── config/         # Settings（pydantic）
 │   └── requirements.txt
 ├── backend/                # FastAPI バックエンド
@@ -215,7 +215,7 @@ agent-team/
 - [x] エンドツーエンドの音声会話
 - [x] システムトレイ常駐（Tray アイコン・コンテキストメニュー・×で非表示）
 - [x] グローバルホットキーで呼び出し（`Ctrl+Shift+Space` で録音開始）
-- [x] 無音自動停止 VAD（発話後 5 秒無音で自動停止）
+- [x] 無音自動停止 VAD（発話後 3 秒無音で自動停止）
 - [ ] ウェイクワードで呼び出し（発話で自動録音開始）
 - [ ] Windows 起動時に自動起動
 - [ ] 会話履歴の永続化

@@ -362,128 +362,69 @@ class VOICEVOXSynthesizer:
 
 
 # ---------------------------------------------------------------------------
-# Style-Bert-VITS2
+# Kokoro-82M
 # ---------------------------------------------------------------------------
 
-class StyleBertVITS2Synthesizer:
-    """Style-Bert-VITS2 API サーバー経由の日本語 TTS。
-
-    事前に Style-Bert-VITS2 の API サーバーを起動しておく必要がある。
-    https://github.com/litagin02/Style-Bert-VITS2
-
-    起動例:
-        cd Style-Bert-VITS2
-        python server_fastapi.py
-    """
-
-    def __init__(
-        self,
-        base_url: str = "http://localhost:5000",
-        model_id: int = 0,
-        speaker_id: int = 0,
-        style: str = "Neutral",
-    ) -> None:
-        import urllib.request
-        self._base_url = base_url.rstrip("/")
-        self._model_id = model_id
-        self._speaker_id = speaker_id
-        self._style = style
-        try:
-            urllib.request.urlopen(f"{self._base_url}/models/info", timeout=5)
-        except Exception as e:
-            raise RuntimeError(
-                f"Style-Bert-VITS2 サーバーに接続できません ({base_url})\n"
-                f"サーバーが起動しているか確認してください: {e}"
-            )
-        print(f"[TTS] Style-Bert-VITS2 モード: model_id={model_id}, speaker_id={speaker_id}")
-
-    def synthesize(self, text: str) -> bytes:
-        import urllib.parse
-        import urllib.request
-
-        text = _strip_markdown(text).strip()
-        if not text:
-            return b""
-
-        params = urllib.parse.urlencode({
-            "text": text,
-            "model_id": self._model_id,
-            "speaker_id": self._speaker_id,
-            "style": self._style,
-        })
-        url = f"{self._base_url}/voice?{params}"
-        with urllib.request.urlopen(url, timeout=60) as resp:
-            wav_bytes = resp.read()
-
-        return _trim_trailing_silence(wav_bytes)
-
-
-# ---------------------------------------------------------------------------
-# Coqui XTTS v2
-# ---------------------------------------------------------------------------
-
-class XTTSSynthesizer:
-    """Coqui XTTS v2 を使ったローカル TTS（GPU 推奨）。
-
-    初回起動時にモデルをダウンロードします（約 2GB）。
-    話者参照音声（speaker_wav）として 6〜10 秒の日本語 WAV ファイルが必要です。
+class KokoroSynthesizer:
+    """Kokoro-82M を使ったローカル TTS（CPU 動作可・GPU 推奨）。
 
     インストール:
-        pip install TTS
+        pip install kokoro
+        apt-get install espeak-ng   # 音素変換に必要
 
-    config.yaml 例:
-        engine: "xtts"
-        xtts_speaker_wav: "models/tts/speaker.wav"
+    主な日本語ボイス:
+        jf_alpha, jf_kokoro, jf_gongitsune, jf_nezumi, jf_tebukuro  （女性）
+        jm_kumo                                                        （男性）
     """
 
     _SAMPLE_RATE = 24000
 
-    def __init__(
-        self,
-        model_name: str = "tts_models/multilingual/multi-dataset/xtts_v2",
-        language: str = "ja",
-        speaker_wav: str = "",
-        device: str = "cuda",
-    ) -> None:
-        if not speaker_wav:
-            raise ValueError(
-                "XTTSSynthesizer には speaker_wav（参照音声 WAV）が必須です。\n"
-                "6〜10 秒の日本語 WAV を用意して config.yaml の xtts_speaker_wav に指定してください。"
-            )
-        if not Path(speaker_wav).exists():
-            raise FileNotFoundError(f"speaker_wav が見つかりません: {speaker_wav}")
-
+    def __init__(self, voice: str = "jf_alpha", speed: float = 1.0, device: str = "cuda") -> None:
         try:
-            from TTS.api import TTS as CoquiTTS
+            from kokoro import KPipeline
         except ImportError as e:
             raise ImportError(
-                "Coqui TTS が未インストールです。\n"
-                "pip install TTS を実行してください。"
+                "Kokoro が未インストールです。\n"
+                "pip install kokoro && apt-get install -y espeak-ng を実行してください。"
             ) from e
 
-        print(f"[TTS] XTTS v2 ロード中 (device={device}, model={model_name})...")
-        self._tts = CoquiTTS(model_name).to(device)
-        self._language = language
-        self._speaker_wav = speaker_wav
-        print("[TTS] XTTS v2 ロード完了")
+        # CUDA が使えない場合は CPU にフォールバック
+        try:
+            import torch
+            if device == "cuda" and not torch.cuda.is_available():
+                device = "cpu"
+        except ImportError:
+            device = "cpu"
+
+        print(f"[TTS] Kokoro モード: voice={voice}, speed={speed}, device={device}")
+        self._pipeline = KPipeline(lang_code="j", device=device)
+        self._voice = voice
+        self._speed = speed
+        print("[TTS] Kokoro ロード完了")
 
     def synthesize(self, text: str) -> bytes:
         import array as arr
+        import numpy as np
 
         text = _strip_markdown(text).strip()
         if not text:
             return b""
 
-        wav_array = self._tts.tts(
-            text=text,
-            language=self._language,
-            speaker_wav=self._speaker_wav,
-        )
+        # Kokoro は長文も一括処理できるが、複数チャンクで返す場合があるので結合する
+        all_samples: list = []
+        for _, _, audio in self._pipeline(text, voice=self._voice, speed=self._speed):
+            if audio is not None and len(audio) > 0:
+                all_samples.append(audio)
 
-        # float32 サンプル列 → int16 WAV bytes
+        if not all_samples:
+            return b""
+
+        combined = np.concatenate(all_samples) if len(all_samples) > 1 else all_samples[0]
+
+        # float32 → int16
         samples = arr.array(
             "h",
-            (max(-32768, min(32767, int(s * 32767))) for s in wav_array),
+            (max(-32768, min(32767, int(s * 32767))) for s in combined),
         )
         buf = io.BytesIO()
         with wave.open(buf, "wb") as w:

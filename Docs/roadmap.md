@@ -11,13 +11,13 @@
 
 ---
 
-## 現在の動作状況（2026-03-05 時点）
+## 現在の動作状況（2026-03-07 時点）
 
 | コンポーネント | 状態 | 実装 |
 |---|---|---|
-| STT（音声認識） | ✅ 完了 | faster-whisper large-v3（GPU: RTX 4000 Ada） |
-| LLM（推論） | ✅ 完了 | Ollama + qwen2.5:14b（keep_alive 5分） |
-| TTS（日本語音声合成） | ✅ 完了 | VOICEVOX（主）/ open_jtalk / Style-Bert-VITS2 / XTTS v2 切り替え対応 |
+| STT（音声認識） | ✅ 完了 | faster-whisper large-v3-turbo（GPU: RTX 4000 Ada / large-v3 比 8倍高速） |
+| LLM（推論） | ✅ 完了 | Ollama + qwen3.5:9b（thinking: false / keep_alive 5分） |
+| TTS（日本語音声合成） | ✅ 完了 | VOICEVOX（主）/ open_jtalk / Kokoro-82M 切り替え対応 |
 | FastAPI バックエンド | ✅ 完了 | `/transcribe` `/chat` `/synthesize` `/health` |
 | Electron フロントエンド | ✅ 完了 | 録音UI・会話ログ・テキスト入力 |
 | マイク入力 | ✅ 完了 | Electron Web Audio API（Electron 33 / Chromium 130 対応） |
@@ -25,7 +25,7 @@
 | エンドツーエンド会話ループ | ✅ 完了 | 録音→STT→LLM→TTS→再生 動作確認済み |
 | システムトレイ常駐 | ✅ 完了 | Tray アイコン・コンテキストメニュー・×で非表示 |
 | グローバルホットキー | ✅ 完了 | Ctrl+Shift+Space で表示＋録音自動開始 |
-| 無音自動停止（VAD） | ✅ 完了 | 発話後 5 秒無音で録音を自動停止 |
+| 無音自動停止（VAD） | ✅ 完了 | 発話後 3 秒無音で録音を自動停止 |
 
 ---
 
@@ -91,7 +91,7 @@ Windows 起動時に自動起動
 
 - [x] Electron のシステムトレイ常駐設定（`Tray` + コンテキストメニュー・×で非表示）
 - [x] グローバルホットキーで呼び出し（`Ctrl+Shift+Space` で録音開始）
-- [x] 無音自動停止（VAD）: 発話後 5 秒無音で録音を自動停止（`RecordButton.jsx`）
+- [x] 無音自動停止（VAD）: 発話後 3 秒無音で録音を自動停止（`RecordButton.jsx`）
 - [ ] ウェイクワードで呼び出し（「ねえエージェント」などの発話で自動録音開始）
 - [ ] ルートエージェント → 各専門エージェント呼び出し I/F の設計
 - [ ] Windows 起動時の自動起動設定
@@ -104,6 +104,11 @@ Windows 起動時に自動起動
 | Vite HMR WebSocket が CSP でブロックされる | `index.html` の `connect-src` に `ws://localhost:*` を追加 |
 | devcontainer と Windows が別リポジトリで git 同期できない | WSL2 から SSH で GitHub push → Windows 側で pull |
 | `stopRecording` を `onaudioprocess` 内から呼べない | `stopRecordingRef` で最新の関数を保持し二重呼び出しも防止 |
+| Qwen3.5 が 3 倍遅い | thinking モードがデフォルト ON → `think=False` / `config.yaml: thinking: false` で無効化 |
+| Ollama クライアントとサーバーのバージョン不一致（412） | `pkill ollama && ollama serve` でサーバーを再起動 |
+| Kokoro の日本語依存不足 | `pip install misaki[ja]` → fugashi + unidic-lite + pyopenjtalk を一括インストール |
+| unidic 辞書データが未ダウンロード | `python -m unidic download` で辞書を取得 |
+| LLM の返答に中国語が混入（qwen3.5） | system_prompt に「日本語だけで答えてください」「中国語・英語を使わないでください」を明示 |
 
 **ウェイクワードの技術メモ**
 

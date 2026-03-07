@@ -14,9 +14,11 @@ class OllamaClient:
         base_url: str = "http://localhost:11434",
         system_prompt: str = "あなたは親切なアシスタントです。",
         keep_alive: int = 0,
+        thinking: bool = False,
     ) -> None:
         self.model = model
         self.keep_alive = keep_alive
+        self.thinking = thinking
         self.system_prompt = system_prompt
         self._client = ollama.Client(host=base_url)
         self.history: list[dict[str, str]] = []
@@ -25,16 +27,14 @@ class OllamaClient:
         return [{"role": "system", "content": self.system_prompt}] + self.history
 
     def chat(self, user_message: str) -> str:
-        """ユーザーメッセージを送り、応答テキストを返す。
-
-        keep_alive=0 により推論後すぐに VRAM を解放する。
-        """
+        """ユーザーメッセージを送り、応答テキストを返す。"""
         self.history.append({"role": "user", "content": user_message})
 
         response = self._client.chat(
             model=self.model,
             messages=self._build_messages(),
             keep_alive=self.keep_alive,
+            think=self.thinking,
         )
         assistant_text: str = response.message.content
         self.history.append({"role": "assistant", "content": assistant_text})
@@ -48,6 +48,7 @@ class OllamaClient:
             model=self.model,
             messages=self._build_messages(),
             keep_alive=self.keep_alive,
+            think=self.thinking,
             stream=True,
         )
         full_response = ""

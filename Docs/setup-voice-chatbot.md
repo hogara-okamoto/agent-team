@@ -1,7 +1,7 @@
 # セットアップ手順
 
 > コンテナ再構築後や WSL2 環境への展開時はこの手順に従うこと。
-> 確認済み動作環境: NVIDIA RTX 4000 Ada / 20GB VRAM / CUDA / Debian 11 (bullseye)
+> 確認済み動作環境: NVIDIA RTX 4000 Ada / 12GB VRAM / CUDA / Debian 11 (bullseye)
 
 ---
 
@@ -75,7 +75,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama serve > /tmp/ollama.log 2>&1 &
 
 # モデル取得（初回のみ・約 9GB）
-ollama pull qwen2.5:14b
+ollama pull qwen3.5:9b
 ```
 
 > WSL2 は systemd が動かないため `ollama serve` を手動で起動すること。

@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI):
             base_url=settings.llm.base_url,
             system_prompt=settings.llm.system_prompt,
             keep_alive=settings.llm.keep_alive,
+            thinking=settings.llm.thinking,
         )
         # Ollama サーバーへの疎通確認
         client._client.list()
@@ -70,7 +71,7 @@ async def lifespan(app: FastAPI):
     try:
         from src.tts.synthesizer import (
             OpenJTalkSynthesizer, PiperSynthesizer,
-            VOICEVOXSynthesizer, StyleBertVITS2Synthesizer, XTTSSynthesizer,
+            VOICEVOXSynthesizer, KokoroSynthesizer,
         )
         engine = settings.tts.engine
         if engine == "openjtalk":
@@ -83,19 +84,11 @@ async def lifespan(app: FastAPI):
                 base_url=settings.tts.voicevox_url,
                 speaker=settings.tts.voicevox_speaker,
             )
-        elif engine == "style_bert_vits2":
-            _tts_synthesizer = StyleBertVITS2Synthesizer(
-                base_url=settings.tts.style_bert_vits2_url,
-                model_id=settings.tts.style_bert_vits2_model_id,
-                speaker_id=settings.tts.style_bert_vits2_speaker_id,
-                style=settings.tts.style_bert_vits2_style,
-            )
-        elif engine == "xtts":
-            _tts_synthesizer = XTTSSynthesizer(
-                model_name=settings.tts.xtts_model,
-                language=settings.tts.xtts_language,
-                speaker_wav=settings.tts.xtts_speaker_wav,
-                device=settings.tts.xtts_device,
+        elif engine == "kokoro":
+            _tts_synthesizer = KokoroSynthesizer(
+                voice=settings.tts.kokoro_voice,
+                speed=settings.tts.kokoro_speed,
+                device=settings.tts.kokoro_device,
             )
         else:
             _tts_synthesizer = PiperSynthesizer(

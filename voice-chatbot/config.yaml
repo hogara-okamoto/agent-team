@@ -1,44 +1,34 @@
 stt:
-  model: "large-v3"        # tiny / base / small / medium / large-v3
+  model: "large-v3-turbo"  # tiny / base / small / medium / large-v3 / large-v3-turbo
   language: "ja"
   device: "cuda"           # cuda / cpu
   compute_type: "float16"  # float16 (GPU) / int8 (CPU)
   download_root: "models/whisper"
 
 llm:
-  model: "qwen2.5:14b"
+  model: "qwen3.5:9b"
   base_url: "http://localhost:11434"
-  keep_alive: 300          # 5分間 VRAM に保持（14b はロードに時間がかかるため）
-  system_prompt: "あなたは音声会話アシスタントです。必ず自然な日本語の会話文で答えてください。マークダウン記法（**太字**、# 見出し、番号リスト、箇条書きなど）は絶対に使わないでください。読み上げたときに自然に聞こえる文章で答えてください。"
+  keep_alive: 300          # 5分間 VRAM に保持
+  thinking: false          # 思考モード（true=高精度・低速 / false=音声向け高速）
+  system_prompt: "あなたの名前は岡本です。名前や自己紹介を聞かれたときだけ「岡本です」と答えてください。それ以外の会話では名乗らないでください。人間のように自然に会話してください。必ず日本語だけで答えてください。中国語・英語・その他の言語を一切使わないでください。日本語以外の文字（漢字以外の中国語、アルファベット、ハングルなど）を絶対に出力しないでください。マークダウン記法（**太字**、# 見出し、番号リスト、箇条書きなど）は絶対に使わないでください。読み上げたときに自然に聞こえる日本語の文章で答えてください。"
 
 tts:
-  # engine: openjtalk / voicevox / style_bert_vits2 / xtts / piper
+  # engine: kokoro / openjtalk / voicevox / piper
   engine: "voicevox"
 
-  # --- openjtalk（デフォルト・追加インストール不要） ---
+  # --- Kokoro-82M（デフォルト・pip install kokoro） ---
+  kokoro_voice: "jm_kumo"         # jf_alpha / jf_gongitsune / jf_nezumi / jf_tebukuro / jm_kumo
+  kokoro_speed: 1.0
+  kokoro_device: "cuda"           # cuda / cpu
+
+  # --- openjtalk（軽量フォールバック） ---
   openjtalk_dict: "/var/lib/mecab/dic/open-jtalk/naist-jdic"
   openjtalk_voice: "/usr/share/hts-voice/nitech-jp-atr503-m001/nitech_jp_atr503_m001.htsvoice"
 
   # --- VOICEVOX（高品質・要 Engine 起動） ---
   # docker run --gpus all -p 50021:50021 voicevox/voicevox_engine:nvidia-latest
-  # engine: "voicevox"
   voicevox_url: "http://localhost:50021"
   voicevox_speaker: 13              # 3=ずんだもん, 1=四国めたん, 8=春日部つむぎ
-
-  # --- Style-Bert-VITS2（最高品質・要 API サーバー起動） ---
-  # python server_fastapi.py  （Style-Bert-VITS2 リポジトリ内）
-  # engine: "style_bert_vits2"
-  style_bert_vits2_url: "http://localhost:5000"
-  style_bert_vits2_model_id: 0
-  style_bert_vits2_speaker_id: 0
-  style_bert_vits2_style: "Neutral"
-
-  # --- Coqui XTTS v2（GPU 推奨・pip install TTS・要参照音声） ---
-  # engine: "xtts"
-  xtts_model: "tts_models/multilingual/multi-dataset/xtts_v2"
-  xtts_language: "ja"
-  xtts_speaker_wav: ""             # 例: "models/tts/speaker.wav"（6〜10 秒の日本語 WAV）
-  xtts_device: "cuda"
 
 audio:
   sample_rate: 16000

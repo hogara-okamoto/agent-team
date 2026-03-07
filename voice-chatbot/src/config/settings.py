@@ -42,11 +42,12 @@ class LLMConfig(BaseModel):
     model: str = "llama3.2:3b"
     base_url: str = "http://localhost:11434"
     keep_alive: int = 0
+    thinking: bool = False  # Qwen3/3.5 の思考モード（True=高精度・低速 / False=音声向け高速）
     system_prompt: str = "あなたは親切なアシスタントです。簡潔に日本語で答えてください。"
 
 
 class TTSConfig(BaseModel):
-    engine: str = "openjtalk"  # openjtalk / voicevox / style_bert_vits2 / xtts / piper
+    engine: str = "kokoro"  # kokoro / openjtalk / voicevox / piper
 
     # openjtalk 設定
     openjtalk_dict: str = "/var/lib/mecab/dic/open-jtalk/naist-jdic"
@@ -56,17 +57,10 @@ class TTSConfig(BaseModel):
     voicevox_url: str = "http://localhost:50021"
     voicevox_speaker: int = 3  # 3=ずんだもん, 1=四国めたん, 8=春日部つむぎ
 
-    # style_bert_vits2 設定
-    style_bert_vits2_url: str = "http://localhost:5000"
-    style_bert_vits2_model_id: int = 0
-    style_bert_vits2_speaker_id: int = 0
-    style_bert_vits2_style: str = "Neutral"
-
-    # xtts 設定
-    xtts_model: str = "tts_models/multilingual/multi-dataset/xtts_v2"
-    xtts_language: str = "ja"
-    xtts_speaker_wav: str = ""   # 必須: 6〜10 秒の日本語 WAV ファイルパス
-    xtts_device: str = "cuda"
+    # kokoro 設定
+    kokoro_voice: str = "jf_alpha"  # jf_alpha / jf_gongitsune / jf_nezumi / jf_tebukuro / jm_kumo
+    kokoro_speed: float = 1.0
+    kokoro_device: str = "cuda"     # cuda / cpu
 
     # piper 設定（engine: piper の場合のみ使用）
     model_path: str = "models/tts/ja_JP-test-medium.onnx"

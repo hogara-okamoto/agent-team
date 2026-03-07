@@ -8,6 +8,7 @@ pydantic>=2.0.0
 pydantic-settings>=2.0.0
 pyyaml>=6.0
 numpy>=1.24.0
+kokoro>=0.9.0
 
 # CUDA support for faster-whisper (RTX 3050 Ti)
 nvidia-cublas-cu12
