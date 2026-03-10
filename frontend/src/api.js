@@ -15,6 +15,8 @@ export async function transcribe(audioBlob) {
   return data.text
 }
 
+// chat() は { reply, action, action_params } を返す
+// action === 'send_email' のとき action_params に { client_name, purpose, date_str } が入る
 export async function chat(message) {
   const res = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
@@ -23,7 +25,29 @@ export async function chat(message) {
   })
   const data = await res.json()
   if (!res.ok) throw new Error(data.detail ?? 'chat error')
-  return data.reply
+  return data  // { reply, action, action_params }
+}
+
+export async function emailDraft({ client_name, purpose, date_str }) {
+  const res = await fetch(`${API_BASE}/email/draft`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_name, purpose, date_str }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.detail ?? 'email draft error')
+  return data  // { to, to_name, company, subject, body, client_found }
+}
+
+export async function emailSend({ to, subject, body }) {
+  const res = await fetch(`${API_BASE}/email/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, subject, body }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.detail ?? 'email send error')
+  return data  // { status, to }
 }
 
 export async function synthesize(text) {

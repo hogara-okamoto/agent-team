@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { checkHealth, transcribe, chat, synthesize, clearHistory } from './api'
 import ChatLog from './components/ChatLog'
 import RecordButton from './components/RecordButton'
+import EmailDraftModal from './components/EmailDraftModal'
 import useWakeWord from './hooks/useWakeWord'
 
 // 会話処理の状態
@@ -13,6 +14,9 @@ const STATUS_LABEL = {
   synthesizing: '🔊 音声合成中…',
 }
 
+// メールモーダルへの確認とみなすキーワード（正規表現）
+const CONFIRM_RE = /^(ok|okay|はい|送信|それでよい|よし|良い|いいよ|送って)/i
+
 export default function App() {
   const [messages, setMessages] = useState([])
   const [status, setStatus] = useState('idle')
@@ -23,6 +27,9 @@ export default function App() {
   const [recordTrigger, setRecordTrigger] = useState(0)
   // ウェイクワードモード
   const [wakeWordMode, setWakeWordMode] = useState(false)
+  // メールモーダル
+  const [emailParams, setEmailParams] = useState(null)   // null = 非表示
+  const [emailConfirm, setEmailConfirm] = useState('')   // モーダルへ渡す確認テキスト
 
   // バックエンドのヘルスを定期チェック（未接続なら5秒ごと、接続済みなら30秒ごと）
   useEffect(() => {
@@ -61,6 +68,29 @@ export default function App() {
     audio.play().catch(console.warn)
   }
 
+  // LLM レスポンスを処理する共通関数
+  const replyWithLLM = useCallback(async (userText) => {
+    setStatus('thinking')
+    const data = await chat(userText)           // { reply, action, action_params }
+    const replyText = data.reply
+    appendMessage('assistant', replyText)
+
+    // メール送信 intent が検出された場合はモーダルを表示
+    if (data.action === 'send_email' && data.action_params) {
+      setEmailParams(data.action_params)
+      setEmailConfirm('')
+    }
+
+    // TTS が使えない場合はエラーを無視してテキスト表示のみ
+    try {
+      setStatus('synthesizing')
+      const wavBlob = await synthesize(replyText)
+      playAudio(wavBlob)
+    } catch {
+      // TTS 未対応環境では無音のまま続行
+    }
+  }, [])
+
   // 録音完了後の処理: STT → LLM → TTS
   const handleRecord = async (audioBlob) => {
     setErrorMsg('')
@@ -72,7 +102,17 @@ export default function App() {
         return
       }
       appendMessage('user', userText)
-      await replyWithLLM(userText)
+
+      // メールモーダルが開いている場合は確認テキストとして渡す
+      if (emailParams) {
+        setEmailConfirm(userText)
+        // 確認ワードでなければ通常会話として続行
+        if (!CONFIRM_RE.test(userText.trim())) {
+          await replyWithLLM(userText)
+        }
+      } else {
+        await replyWithLLM(userText)
+      }
     } catch (err) {
       setErrorMsg(err.message)
     } finally {
@@ -87,6 +127,22 @@ export default function App() {
     setTextInput('')
     setErrorMsg('')
     appendMessage('user', userText)
+
+    // メールモーダルが開いている場合は確認テキストとして渡す
+    if (emailParams) {
+      setEmailConfirm(userText)
+      if (!CONFIRM_RE.test(userText)) {
+        try {
+          await replyWithLLM(userText)
+        } catch (err) {
+          setErrorMsg(err.message)
+        } finally {
+          setStatus('idle')
+        }
+      }
+      return
+    }
+
     try {
       await replyWithLLM(userText)
     } catch (err) {
@@ -95,21 +151,6 @@ export default function App() {
       setStatus('idle')
     }
   }
-
-  const replyWithLLM = useCallback(async (userText) => {
-    setStatus('thinking')
-    const replyText = await chat(userText)
-    appendMessage('assistant', replyText)
-
-    // TTS が使えない場合はエラーを無視してテキスト表示のみ
-    try {
-      setStatus('synthesizing')
-      const wavBlob = await synthesize(replyText)
-      playAudio(wavBlob)
-    } catch {
-      // TTS 未対応環境では無音のまま続行
-    }
-  }, [])
 
   // ウェイクワード検出時: 既に transcribed されたテキストを直接 LLM へ渡す
   const handleWakeWordDetected = useCallback(async (text) => {
@@ -142,6 +183,20 @@ export default function App() {
     await clearHistory().catch(console.warn)
     setMessages([])
     setErrorMsg('')
+  }
+
+  // メール送信成功
+  const handleEmailSent = (sentTo) => {
+    appendMessage('assistant', `メールを ${sentTo} に送信しました。`)
+    setEmailParams(null)
+    setEmailConfirm('')
+  }
+
+  // メールモーダルを閉じる
+  const handleEmailClose = () => {
+    setEmailParams(null)
+    setEmailConfirm('')
+    appendMessage('assistant', 'メール送信をキャンセルしました。')
   }
 
   return (
@@ -208,6 +263,16 @@ export default function App() {
           </button>
         </div>
       </footer>
+
+      {emailParams && (
+        <EmailDraftModal
+          params={emailParams}
+          onClose={handleEmailClose}
+          onSent={handleEmailSent}
+          onError={setErrorMsg}
+          confirmText={emailConfirm}
+        />
+      )}
     </div>
   )
 }

@@ -18,11 +18,16 @@ from pathlib import Path
 # voice-chatbot の src パッケージを import パスに追加
 sys.path.insert(0, str(Path(__file__).parent.parent / "voice-chatbot"))
 
+# .env を環境変数に読み込む（GMAIL_ADDRESS / GMAIL_APP_PASSWORD など）
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent / ".env")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from dependencies import lifespan
 from routers import chat, synthesize, transcribe, wakeword
+from routers import email_agent
 
 app = FastAPI(
     title="Voice Chatbot API",
@@ -42,6 +47,7 @@ app.include_router(transcribe.router)
 app.include_router(chat.router)
 app.include_router(synthesize.router)
 app.include_router(wakeword.router)
+app.include_router(email_agent.router)
 
 
 @app.get("/health", tags=["system"])
