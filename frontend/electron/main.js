@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, session } = require('electron')
 const path = require('path')
-const { spawn } = require('child_process')
+const { exec } = require('child_process')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -33,54 +33,21 @@ function setupPermissions() {
   })
 }
 
-let ollamaProcess = null
-let backendProcess = null
-
 /**
- * WSL2 で Ollama を起動する。
- * spawn でフォアグラウンド実行し WSL セッションを維持する。
- * 既に起動済みの場合は即終了（code=0）するためリトライしない。
- */
-function launchOllama() {
-  ollamaProcess = spawn('wsl', [
-    '--', 'bash', '-c',
-    'pgrep -x ollama > /dev/null && exit 0; ollama serve'
-  ], { stdio: ['ignore', 'pipe', 'pipe'] })
-
-  ollamaProcess.stdout.on('data', d => console.log('[Ollama]', d.toString().trim()))
-  ollamaProcess.stderr.on('data', d => console.log('[Ollama]', d.toString().trim()))
-
-  ollamaProcess.on('exit', (code, signal) => {
-    ollamaProcess = null
-    if (!app.isQuitting && code !== 0) {
-      console.warn(`[Ollama] exited (code=${code} signal=${signal}), retry in 15s`)
-      setTimeout(launchOllama, 15_000)
-    }
-  })
-}
-
-/**
- * WSL2 で FastAPI バックエンド（uvicorn）を起動する。
- * spawn でフォアグラウンド実行し WSL セッションを維持する。
+ * WSL2 で Ollama + FastAPI バックエンドをバックグラウンド起動する。
+ * WSL2 未起動など失敗した場合は retryDelay ms 後にリトライする。
  */
 function launchBackend(retryDelay = 15_000) {
-  backendProcess = spawn('wsl', [
-    '--', 'bash', '-c',
-    'source ~/projects/agent-team/.venv/bin/activate && ' +
-    'cd ~/projects/agent-team/backend && ' +
-    'uvicorn main:app --host 0.0.0.0 --port 8000'
-  ], { stdio: ['ignore', 'pipe', 'pipe'] })
-
-  backendProcess.stdout.on('data', d => console.log('[Backend]', d.toString().trim()))
-  backendProcess.stderr.on('data', d => console.log('[Backend]', d.toString().trim()))
-
-  backendProcess.on('exit', (code, signal) => {
-    backendProcess = null
-    if (!app.isQuitting) {
-      console.warn(`[Backend] exited (code=${code} signal=${signal}), retry in ${retryDelay / 1000}s`)
-      setTimeout(() => launchBackend(retryDelay), retryDelay)
+  exec(
+    'wsl -- bash -c "~/projects/agent-team/scripts/start-backend.sh"',
+    (err, stdout) => {
+      if (stdout) console.log('[Backend]', stdout.trim())
+      if (err) {
+        console.warn(`[Backend] launch failed, retry in ${retryDelay / 1000}s:`, err.message)
+        setTimeout(() => launchBackend(retryDelay), retryDelay)
+      }
     }
-  })
+  )
 }
 
 /**
@@ -194,7 +161,6 @@ function createWindow() {
 app.isQuitting = false
 
 app.whenReady().then(() => {
-  launchOllama()
   launchBackend()
   setupPermissions()
   const win = createWindow()
@@ -214,8 +180,6 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
-  if (ollamaProcess) ollamaProcess.kill()
-  if (backendProcess) backendProcess.kill()
 })
 
 // トレイ常駐のため window-all-closed での自動終了を無効化

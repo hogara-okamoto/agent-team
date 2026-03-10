@@ -14,8 +14,7 @@ mkdir -p "$LOG_DIR"
 if pgrep -x ollama > /dev/null; then
   echo "[backend] ollama: already running"
 else
-  setsid nohup ollama serve > "$LOG_DIR/ollama.log" 2>&1 &
-  disown $!
+  nohup ollama serve > "$LOG_DIR/ollama.log" 2>&1 &
   echo "[backend] ollama: started (pid $!)"
 fi
 
@@ -25,8 +24,7 @@ if pgrep -f "uvicorn main:app" > /dev/null; then
 else
   cd "$PROJECT_DIR/backend"
   source "$VENV/bin/activate"
-  setsid nohup uvicorn main:app --host 0.0.0.0 --port 8000 \
+  nohup uvicorn main:app --host 0.0.0.0 --port 8000 \
     > "$LOG_DIR/backend.log" 2>&1 &
-  disown $!
   echo "[backend] uvicorn: started (pid $!)"
 fi
