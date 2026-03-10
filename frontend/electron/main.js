@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, session } = require('electron')
 const path = require('path')
-const { exec, spawn } = require('child_process')
+const { spawn } = require('child_process')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -33,18 +33,37 @@ function setupPermissions() {
   })
 }
 
+let ollamaProcess = null
 let backendProcess = null
 
 /**
- * WSL2 で Ollama + FastAPI バックエンドを起動する。
- * uvicorn は spawn でフォアグラウンド実行し WSL セッションを維持する
- * （セッション終了による WSL2 自動シャットダウンを防ぐため）。
+ * WSL2 で Ollama を起動する。
+ * spawn でフォアグラウンド実行し WSL セッションを維持する。
+ * 既に起動済みの場合は即終了（code=0）するためリトライしない。
+ */
+function launchOllama() {
+  ollamaProcess = spawn('wsl', [
+    '--', 'bash', '-c',
+    'pgrep -x ollama > /dev/null && exit 0; ollama serve'
+  ], { stdio: ['ignore', 'pipe', 'pipe'] })
+
+  ollamaProcess.stdout.on('data', d => console.log('[Ollama]', d.toString().trim()))
+  ollamaProcess.stderr.on('data', d => console.log('[Ollama]', d.toString().trim()))
+
+  ollamaProcess.on('exit', (code, signal) => {
+    ollamaProcess = null
+    if (!app.isQuitting && code !== 0) {
+      console.warn(`[Ollama] exited (code=${code} signal=${signal}), retry in 15s`)
+      setTimeout(launchOllama, 15_000)
+    }
+  })
+}
+
+/**
+ * WSL2 で FastAPI バックエンド（uvicorn）を起動する。
+ * spawn でフォアグラウンド実行し WSL セッションを維持する。
  */
 function launchBackend(retryDelay = 15_000) {
-  // Ollama を起動（既に起動済みならスキップ）
-  exec('wsl -- bash -c "mkdir -p ~/.local/log/voice-agent && pgrep -x ollama > /dev/null || nohup ollama serve > ~/.local/log/voice-agent/ollama.log 2>&1 &"')
-
-  // uvicorn をフォアグラウンドで起動（WSL セッションを維持するため spawn を使用）
   backendProcess = spawn('wsl', [
     '--', 'bash', '-c',
     'source ~/projects/agent-team/.venv/bin/activate && ' +
@@ -175,6 +194,7 @@ function createWindow() {
 app.isQuitting = false
 
 app.whenReady().then(() => {
+  launchOllama()
   launchBackend()
   setupPermissions()
   const win = createWindow()
@@ -194,6 +214,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  if (ollamaProcess) ollamaProcess.kill()
   if (backendProcess) backendProcess.kill()
 })
 
