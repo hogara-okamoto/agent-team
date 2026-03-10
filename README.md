@@ -26,6 +26,9 @@
 - **システムトレイ常駐** — × ボタンで非表示にしてもバックグラウンドで常駐
 - **グローバルホットキー** — `Ctrl+Shift+Space` でいつでも即呼び出し・録音開始
 - **無音自動停止（VAD）** — 発話後 3 秒無音で録音を自動停止
+- **ウェイクワード呼び出し** — 「エージェント」「岡本」と話しかけると自動で録音開始
+- **Windows 自動起動** — PC 起動時にトレイアイコン＋バックエンドが自動で立ち上がる
+- **メール送信エージェント** — 音声でアポ依頼 → クライアント検索 → メール文案生成 → Gmail 送信
 
 ---
 
@@ -43,10 +46,13 @@
 ┌───────────────▼──────────────────────┐
 │  FastAPI バックエンド（WSL2）         │
 │                                      │
-│  POST /transcribe  WAV  → テキスト   │
-│  POST /chat        テキスト → 返答   │
-│  POST /synthesize  テキスト → WAV    │
-│  GET  /health      状態確認          │
+│  POST /transcribe   WAV  → テキスト  │
+│  POST /chat         テキスト → 返答  │
+│  POST /synthesize   テキスト → WAV   │
+│  GET  /health       状態確認         │
+│  POST /wakeword     ウェイクワード判定│
+│  POST /email/draft  メール文案生成   │
+│  POST /email/send   Gmail 送信       │
 └──────────────────────────────────────┘
 ```
 
@@ -137,7 +143,21 @@ curl http://localhost:50021/version
 > 初回のみ `docker update --restart=always voicevox` 相当の設定が `--restart=always` で自動適用される。
 > Docker Desktop を自動起動設定にすれば PC 再起動後も自動で VOICEVOX が起動する。
 
-### 7. フロントエンド依存パッケージ
+### 7. Gmail 認証情報（メール送信エージェントを使う場合）
+
+`backend/.env` を各マシンで手動作成してください（`.gitignore` 対象のため `git pull` では届きません）。
+
+```bash
+# WSL2 側
+cat > agent-team/backend/.env <<'EOF'
+GMAIL_ADDRESS=your-address@gmail.com
+GMAIL_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
+EOF
+```
+
+> Gmail の「アプリ パスワード」は Google アカウント → セキュリティ → 2段階認証を有効にした上で発行できます。
+
+### 8. フロントエンド依存パッケージ
 
 ```bash
 # Windows 側（C:\Users\<user>\projects\agent-team\frontend）
@@ -184,10 +204,15 @@ agent-team/
 ├── backend/                # FastAPI バックエンド
 │   ├── main.py
 │   ├── dependencies.py     # lifespan / DI
+│   ├── .env                # ※ git 管理外・各マシンで手動作成（GMAIL_ADDRESS 等）
 │   └── routers/
 │       ├── transcribe.py
-│       ├── chat.py
-│       └── synthesize.py
+│       ├── chat.py         # intent 検出（メール送信）含む
+│       ├── synthesize.py
+│       ├── wakeword.py     # ウェイクワード判定
+│       └── email_agent.py  # メール文案生成・Gmail 送信
+├── data/
+│   └── clients.json        # クライアント一覧（name / company / email）
 ├── frontend/               # Electron + React フロントエンド
 │   ├── electron/
 │   │   ├── main.js         # メインプロセス（Tray・ホットキー・ウィンドウ管理）
@@ -197,9 +222,12 @@ agent-team/
 │       ├── App.jsx
 │       ├── api.js           # FastAPI クライアント
 │       ├── audioUtils.js    # WAV エンコーダ
+│       ├── hooks/
+│       │   └── useWakeWord.js  # 常時 VAD + ウェイクワード検出
 │       └── components/
 │           ├── ChatLog.jsx
-│           └── RecordButton.jsx
+│           ├── RecordButton.jsx
+│           └── EmailDraftModal.jsx  # メール確認・送信モーダル
 └── Docs/
     ├── roadmap.md
     └── setup-voice-chatbot.md
@@ -216,10 +244,12 @@ agent-team/
 - [x] システムトレイ常駐（Tray アイコン・コンテキストメニュー・×で非表示）
 - [x] グローバルホットキーで呼び出し（`Ctrl+Shift+Space` で録音開始）
 - [x] 無音自動停止 VAD（発話後 3 秒無音で自動停止）
-- [ ] ウェイクワードで呼び出し（発話で自動録音開始）
-- [ ] Windows 起動時に自動起動
+- [x] ウェイクワードで呼び出し（「エージェント」「岡本」で自動録音開始）
+- [x] Windows 起動時に自動起動
+- [x] メール送信エージェント（音声でアポ依頼 → Gmail 送信）
 - [ ] 会話履歴の永続化
 - [ ] 専門エージェント（ファイル操作・Web 検索・コード実行）
+  - [x] メール送信エージェント（アポイント日時の調整・Gmail 送信）
 
 ---
 
