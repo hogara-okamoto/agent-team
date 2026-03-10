@@ -35,13 +35,17 @@ function setupPermissions() {
 
 /**
  * WSL2 で Ollama + FastAPI バックエンドをバックグラウンド起動する。
- * パッケージ版・開発版どちらからでも呼べるようにホームディレクトリを直接指定。
+ * WSL2 未起動など失敗した場合は retryDelay ms 後にリトライする。
  */
-function launchBackend() {
+function launchBackend(retryDelay = 15_000) {
   exec(
     'wsl -- bash -c "~/projects/agent-team/scripts/start-backend.sh"',
-    (_err, stdout) => {
+    (err, stdout) => {
       if (stdout) console.log('[Backend]', stdout.trim())
+      if (err) {
+        console.warn(`[Backend] launch failed, retry in ${retryDelay / 1000}s:`, err.message)
+        setTimeout(() => launchBackend(retryDelay), retryDelay)
+      }
     }
   )
 }
