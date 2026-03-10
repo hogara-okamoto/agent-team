@@ -39,6 +39,14 @@ export async function synthesize(text) {
   return res.blob()
 }
 
+export async function checkWakeWord(audioBlob) {
+  const form = new FormData()
+  form.append('file', audioBlob, 'clip.wav')
+  const res = await fetch(`${API_BASE}/wakeword`, { method: 'POST', body: form })
+  if (!res.ok) return { detected: false, text: '' }
+  return res.json()
+}
+
 export async function clearHistory() {
   const res = await fetch(`${API_BASE}/chat/history`, { method: 'DELETE' })
   return res.json()

@@ -15,6 +15,7 @@ if _vc_path not in sys.path:
 _transcriber: Optional[Any] = None
 _llm_client: Optional[Any] = None
 _tts_synthesizer: Optional[Any] = None
+_wake_words: list[str] = ["エージェント", "岡本さん"]
 
 # 初期化失敗時のエラーメッセージを保持
 _init_errors: dict[str, str] = {}
@@ -25,7 +26,7 @@ async def lifespan(app: FastAPI):
     """起動時にモデルをロード、終了時にアンロードする。
     コンポーネントが欠落している場合は警告を出して続行する。
     """
-    global _transcriber, _llm_client, _tts_synthesizer
+    global _transcriber, _llm_client, _tts_synthesizer, _wake_words
 
     try:
         from src.config import Settings
@@ -35,6 +36,9 @@ async def lifespan(app: FastAPI):
         print(f"[WARNING] 設定ファイルの読み込みに失敗しました（デフォルト値を使用）: {e}")
         from src.config import Settings
         settings = Settings()
+
+    # --- Wake Word ---
+    _wake_words = settings.wake_word.words
 
     # --- STT ---
     try:
@@ -109,6 +113,10 @@ async def lifespan(app: FastAPI):
     # --- Shutdown ---
     if _transcriber is not None and hasattr(_transcriber, "unload"):
         _transcriber.unload()
+
+
+def get_wake_words() -> list[str]:
+    return _wake_words
 
 
 def get_transcriber() -> Any:

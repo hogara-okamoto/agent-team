@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { checkHealth, transcribe, chat, synthesize, clearHistory } from './api'
 import ChatLog from './components/ChatLog'
 import RecordButton from './components/RecordButton'
+import useWakeWord from './hooks/useWakeWord'
 
 // 会話処理の状態
 // 'idle' | 'recording' | 'transcribing' | 'thinking' | 'synthesizing'
@@ -20,6 +21,8 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState('')
   // トレイ/ホットキーから録音開始を受け取るカウンター
   const [recordTrigger, setRecordTrigger] = useState(0)
+  // ウェイクワードモード
+  const [wakeWordMode, setWakeWordMode] = useState(false)
 
   // 起動時にバックエンドのヘルスを確認
   useEffect(() => {
@@ -80,7 +83,7 @@ export default function App() {
     }
   }
 
-  const replyWithLLM = async (userText) => {
+  const replyWithLLM = useCallback(async (userText) => {
     setStatus('thinking')
     const replyText = await chat(userText)
     appendMessage('assistant', replyText)
@@ -93,15 +96,40 @@ export default function App() {
     } catch {
       // TTS 未対応環境では無音のまま続行
     }
-  }
+  }, [])
+
+  // ウェイクワード検出時: 既に transcribed されたテキストを直接 LLM へ渡す
+  const handleWakeWordDetected = useCallback(async (text) => {
+    if (!text.trim()) return
+    setErrorMsg('')
+    appendMessage('user', text)
+    try {
+      await replyWithLLM(text)
+    } catch (err) {
+      setErrorMsg(err.message)
+    } finally {
+      setStatus('idle')
+    }
+  }, [replyWithLLM])
+
+  const isProcessing = status !== 'idle'
+
+  const { isMonitoring, startMonitoring, stopMonitoring } = useWakeWord({
+    onDetected: handleWakeWordDetected,
+    canTrigger: !isProcessing,
+  })
+
+  // wakeWordMode トグルに連動してモニタリングを開始/停止
+  useEffect(() => {
+    if (wakeWordMode) startMonitoring()
+    else stopMonitoring()
+  }, [wakeWordMode])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClearHistory = async () => {
     await clearHistory().catch(console.warn)
     setMessages([])
     setErrorMsg('')
   }
-
-  const isProcessing = status !== 'idle'
 
   return (
     <div className="app">
@@ -112,6 +140,9 @@ export default function App() {
 
       <ChatLog messages={messages} />
 
+      {isMonitoring && !isProcessing && (
+        <div className="status-indicator wake-listening">👂 ウェイクワード待機中…</div>
+      )}
       {STATUS_LABEL[status] && (
         <div className="status-indicator">{STATUS_LABEL[status]}</div>
       )}
@@ -142,6 +173,13 @@ export default function App() {
         </div>
 
         <div className="action-row">
+          <button
+            className={`wakeword-btn ${wakeWordMode ? 'active' : ''}`}
+            onClick={() => setWakeWordMode((m) => !m)}
+            title="ウェイクワード（「エージェント」「岡本さん」）で自動録音"
+          >
+            {wakeWordMode ? '👂 待機中' : '💤 ウェイクワード'}
+          </button>
           <RecordButton
             onRecord={handleRecord}
             onError={setErrorMsg}

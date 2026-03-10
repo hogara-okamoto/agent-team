@@ -30,6 +30,11 @@ tts:
   voicevox_url: "http://localhost:50021"
   voicevox_speaker: 13              # 3=ずんだもん, 1=四国めたん, 8=春日部つむぎ
 
+wake_word:
+  words:
+    - "エージェント"
+    - "岡本さん"
+
 audio:
   sample_rate: 16000
   chunk_duration: 0.1      # 録音チャンク長 (秒)

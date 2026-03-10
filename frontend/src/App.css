@@ -293,6 +293,29 @@ button:not(:disabled):active {
   opacity: 0.85;
 }
 
+/* ===== Wake Word Button ===== */
+.wakeword-btn {
+  background: var(--surface2);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.wakeword-btn.active {
+  background: #2d4a3e;
+  color: #4ade80;
+  animation: wake-pulse 2s ease-in-out infinite;
+}
+
+@keyframes wake-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.3); }
+  50%       { box-shadow: 0 0 0 6px rgba(74, 222, 128, 0); }
+}
+
+.wakeword-btn:not(:disabled):hover {
+  color: var(--text);
+  opacity: 0.85;
+}
+
 /* ===== Clear Button ===== */
 .clear-btn {
   background: var(--surface2);

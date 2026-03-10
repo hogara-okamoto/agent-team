@@ -76,11 +76,16 @@ class AudioConfig(BaseModel):
     max_record_duration: float = 30.0
 
 
+class WakeWordConfig(BaseModel):
+    words: list[str] = ["エージェント", "岡本さん"]
+
+
 class Settings(BaseModel):
     stt: STTConfig = STTConfig()
     llm: LLMConfig = LLMConfig()
     tts: TTSConfig = TTSConfig()
     audio: AudioConfig = AudioConfig()
+    wake_word: WakeWordConfig = WakeWordConfig()
 
     @classmethod
     def from_yaml(cls, path: str = "config.yaml") -> "Settings":
