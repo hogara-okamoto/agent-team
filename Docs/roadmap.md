@@ -11,21 +11,24 @@
 
 ---
 
-## 現在の動作状況（2026-03-07 時点）
+## 現在の動作状況（2026-03-10 時点）
 
 | コンポーネント | 状態 | 実装 |
 |---|---|---|
 | STT（音声認識） | ✅ 完了 | faster-whisper large-v3-turbo（GPU: RTX 4000 Ada / large-v3 比 8倍高速） |
 | LLM（推論） | ✅ 完了 | Ollama + qwen3.5:9b（thinking: false / keep_alive 5分） |
 | TTS（日本語音声合成） | ✅ 完了 | VOICEVOX（主）/ open_jtalk / Kokoro-82M 切り替え対応 |
-| FastAPI バックエンド | ✅ 完了 | `/transcribe` `/chat` `/synthesize` `/health` |
+| FastAPI バックエンド | ✅ 完了 | `/transcribe` `/chat` `/synthesize` `/health` `/email/draft` `/email/send` `/wakeword` |
 | Electron フロントエンド | ✅ 完了 | 録音UI・会話ログ・テキスト入力 |
 | マイク入力 | ✅ 完了 | Electron Web Audio API（Electron 33 / Chromium 130 対応） |
 | スピーカー出力（リアルタイム） | ✅ 完了 | Electron `<Audio>` 再生 |
 | エンドツーエンド会話ループ | ✅ 完了 | 録音→STT→LLM→TTS→再生 動作確認済み |
 | システムトレイ常駐 | ✅ 完了 | Tray アイコン・コンテキストメニュー・×で非表示 |
 | グローバルホットキー | ✅ 完了 | Ctrl+Shift+Space で表示＋録音自動開始 |
-| 無音自動停止（VAD） | ✅ 完了 | 発話後 3 秒無音で録音を自動停止 |
+| 無音自動停止（VAD） | ✅ 完了 | 発話後 3 秒無音で録音を自動停止（RMS閾値 0.005） |
+| ウェイクワード呼び出し | ✅ 完了 | 「エージェント」「岡本」発話で自動録音開始（Whisper 判定） |
+| Windows 自動起動 | ✅ 完了 | portable .exe + app.setLoginItemSettings + start-backend.sh |
+| メール送信エージェント | ✅ 完了 | 音声でアポ依頼 → クライアント検索 → LLM でメール文案生成 → Gmail 送信 |
 
 ---
 
@@ -76,7 +79,7 @@
 
 ---
 
-### フェーズ2：システムトレイ常駐型エージェントへ進化 ✅ 一部完了
+### フェーズ2：システムトレイ常駐型エージェントへ進化 ✅ 完了
 
 **目標**：常時バックグラウンド起動、ホットキーまたは音声で即呼び出し。
 
@@ -93,8 +96,8 @@ Windows 起動時に自動起動
 - [x] グローバルホットキーで呼び出し（`Ctrl+Shift+Space` で録音開始）
 - [x] 無音自動停止（VAD）: 発話後 3 秒無音で録音を自動停止（`RecordButton.jsx`）
 - [x] ウェイクワードで呼び出し（「エージェント」「岡本」の発話で自動 STT→LLM→TTS）
-- [ ] ルートエージェント → 各専門エージェント呼び出し I/F の設計
 - [x] Windows 起動時の自動起動設定（portable .exe + トレイメニューで ON/OFF）
+- [ ] ルートエージェント → 各専門エージェント呼び出し I/F の設計
 - [ ] 会話履歴の永続化
 
 **解決した技術課題**
@@ -109,6 +112,9 @@ Windows 起動時に自動起動
 | Kokoro の日本語依存不足 | `pip install misaki[ja]` → fugashi + unidic-lite + pyopenjtalk を一括インストール |
 | unidic 辞書データが未ダウンロード | `python -m unidic download` で辞書を取得 |
 | LLM の返答に中国語が混入（qwen3.5） | system_prompt に「日本語だけで答えてください」「中国語・英語を使わないでください」を明示 |
+| LLM が intent 抽出で NULL を返すことがある | 正規表現で宛先名を先に確定（確実・高速）→ LLM は fallback のみ（最大 2 回リトライ） |
+| 早口で録音が途中で打ち切られる | `SILENCE_RMS_THRESHOLD` を 0.01 → 0.005 に下げ、語間の小休止で停止しないよう調整 |
+| `backend/.env` が git pull で Windows 側に届かない | `.env` は `.gitignore` 対象のため git 管理外。WSL2 で作成した `.env` は push されず、Windows 側の `git pull` でも生成されない。**環境構築時に Windows 側で手動作成が必要**（`GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD`） |
 
 **ウェイクワードの技術メモ**
 
@@ -133,12 +139,13 @@ Windows 起動時に自動起動
 
 ---
 
-## 次のアクション（フェーズ2 残タスク）
+## 次のアクション（フェーズ3 残タスク）
 
 1. ~~Electron でシステムトレイアイコンを表示する~~ ✅ 完了
 2. ~~グローバルホットキー（`globalShortcut`）で会話ウィンドウを呼び出す~~ ✅ 完了
 3. ~~無音自動停止（VAD）を実装する~~ ✅ 完了
-4. ウェイクワード検出を実装する（OpenWakeWord を Electron renderer に組み込み）
-5. バックエンドの自動起動スクリプトを整備する（WSL2 起動時に自動で `uvicorn` 起動）
-6. 会話履歴を SQLite または JSON ファイルで永続化する
-7. ルートエージェントの専門エージェント振り分けロジックを設計する
+4. ~~ウェイクワード検出を実装する~~ ✅ 完了（Whisper 判定方式）
+5. ~~Windows 起動時の自動起動~~ ✅ 完了
+6. ~~メール送信エージェント（アポイント日時調整）~~ ✅ 完了
+7. 会話履歴を SQLite または JSON ファイルで永続化する
+8. ルートエージェントの専門エージェント振り分けロジックを設計する
