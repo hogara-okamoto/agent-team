@@ -17,7 +17,11 @@ from dependencies import get_llm_client
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-# メール送信 intent のキーワード（いずれか1つ以上含む場合に intent 判定を試みる）
+# ──────────────────────────────────────────────
+# intent 検出ロジック
+# ──────────────────────────────────────────────
+
+# メール送信 intent のキーワード
 _EMAIL_KEYWORDS = [
     "メール", "mail", "Mail",
     "アポ", "アポイント",
@@ -25,6 +29,14 @@ _EMAIL_KEYWORDS = [
     "ミーティング", "打ち合わせ", "連絡して",
 ]
 
+# 「〇〇さんに」「〇〇様に」「〇〇さんへ」パターンで宛先名を抽出する正規表現
+# 1〜8文字の非区切り文字 + (さん|様|氏|くん) + (に|へ)
+_RECIPIENT_RE = re.compile(r"([^\s、。！？\n]{1,8}?)(?:さん|様|氏|くん)(?:に|へ)")
+
+# エージェント自身の名前など、宛先として除外する語
+_SELF_NAMES: set[str] = {"岡本", "エージェント", "私", "僕", "俺", "自分"}
+
+# JSON コードブロック除去用
 _JSON_RE = re.compile(r"```json?\s*(.*?)\s*```", re.DOTALL)
 
 
@@ -32,31 +44,28 @@ def _has_email_keyword(text: str) -> bool:
     return any(kw in text for kw in _EMAIL_KEYWORDS)
 
 
-async def _extract_email_params(text: str, llm) -> Optional[dict]:
-    """LLM を使ってメール送信パラメータを抽出する。会話履歴には追加しない。
-    client_name は必須。purpose・date_str が不明な場合はデフォルト値を使う。
-    """
+def _extract_recipient_regex(text: str) -> Optional[str]:
+    """「〇〇さんに」パターンで宛先名を確実に抽出する。"""
+    for match in _RECIPIENT_RE.finditer(text):
+        name = match.group(1).strip()
+        if name and name not in _SELF_NAMES and len(name) >= 1:
+            return name
+    return None
+
+
+async def _extract_params_llm(text: str, llm) -> Optional[dict]:
+    """LLM で client_name / purpose / date_str を抽出する（LLM バックアップ用）。"""
     prompt = (
-        f"次のユーザー発言から、メールを送る相手の名前を抽出してください。\n"
+        f"次の発言からメール送信のパラメータを抽出してください。\n"
         f"発言: {text}\n\n"
-        f"メールを送る意図がある場合は以下のJSON形式で出力してください。\n"
-        f"意図が全くない場合だけ null と出力してください。\n"
-        f"purpose や date_str が不明な場合は空文字にしてください。\n\n"
-        f'{{"client_name": "相手の名前（姓のみ可）", '
-        f'"purpose": "用件（不明なら空文字）", '
-        f'"date_str": "日時（不明なら空文字）"}}'
+        f"JSONのみ出力（意図なしの場合は null）:\n"
+        f'{{"client_name":"名前","purpose":"用件(不明なら空)","date_str":"日時(不明なら空)"}}'
     )
     raw = await asyncio.to_thread(
         llm._client.chat,
         model=llm.model,
         messages=[
-            {
-                "role": "system",
-                "content": (
-                    "ユーザーの発言からメール送信の意図とパラメータを抽出します。"
-                    "JSONまたは null のみ出力してください。余分なテキストは不要です。"
-                ),
-            },
+            {"role": "system", "content": "JSONまたは null のみ出力してください。"},
             {"role": "user", "content": prompt},
         ],
         think=False,
@@ -66,19 +75,43 @@ async def _extract_email_params(text: str, llm) -> Optional[dict]:
         if content.lower() == "null":
             return None
         m = _JSON_RE.search(content)
-        text_to_parse = m.group(1) if m else content.strip("`").strip()
-        data = json.loads(text_to_parse)
-        # client_name が抽出できた場合のみ有効とする
-        if not data.get("client_name", "").strip():
-            return None
-        # purpose・date_str のデフォルト
-        if not data.get("purpose"):
-            data["purpose"] = "ご連絡"
-        if not data.get("date_str"):
-            data["date_str"] = "近日中"
-        return data
+        return json.loads(m.group(1) if m else content.strip("`").strip())
     except Exception:
         return None
+
+
+async def _extract_email_params(text: str, llm) -> Optional[dict]:
+    """メール送信パラメータを抽出する。
+    Step1: 正規表現で宛先名を確実に取得。
+    Step2: 正規表現で取れなかった場合のみ LLM で抽出（最大1回リトライ）。
+    """
+    # Step1: 正規表現で宛先名を取得（高速・確実）
+    client_name = _extract_recipient_regex(text)
+
+    if client_name:
+        # 宛先が取れたら purpose / date_str は LLM に任せるが失敗してもデフォルト値を使う
+        llm_result = await _extract_params_llm(text, llm)
+        purpose = (llm_result or {}).get("purpose") or ""
+        date_str = (llm_result or {}).get("date_str") or ""
+        return {
+            "client_name": client_name,
+            "purpose": purpose or "ご連絡",
+            "date_str": date_str or "近日中",
+        }
+
+    # Step2: 正規表現で取れなかった場合は LLM で抽出（1回リトライ付き）
+    for _ in range(2):
+        result = await _extract_params_llm(text, llm)
+        if result and result.get("client_name", "").strip():
+            result.setdefault("purpose", "ご連絡")
+            result.setdefault("date_str", "近日中")
+            if not result["purpose"]:
+                result["purpose"] = "ご連絡"
+            if not result["date_str"]:
+                result["date_str"] = "近日中"
+            return result
+
+    return None
 
 
 # ──────────────────────────────────────────────
@@ -110,17 +143,13 @@ async def chat(
     action: Optional[str] = None
     action_params: Optional[dict] = None
 
-    # キーワードが含まれる場合のみ intent 抽出を試みる（余分な LLM 呼び出しを避ける）
-    has_kw = _has_email_keyword(req.message)
-    print(f"[chat] message={req.message!r}  has_email_keyword={has_kw}")
-    if has_kw:
+    if _has_email_keyword(req.message):
         params = await _extract_email_params(req.message, llm)
-        print(f"[chat] extract_email_params => {params}")
+        print(f"[chat] message={req.message!r}  params={params}")
         if params:
             action = "send_email"
             action_params = params
 
-    # 通常の会話 LLM 呼び出し（履歴に追加される）
     try:
         reply: str = await asyncio.to_thread(llm.chat, req.message)
     except Exception as exc:
