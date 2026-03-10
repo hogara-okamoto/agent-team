@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, session } = require('electron')
 const path = require('path')
-const { exec } = require('child_process')
+const { exec, spawn } = require('child_process')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -33,21 +33,35 @@ function setupPermissions() {
   })
 }
 
+let backendProcess = null
+
 /**
- * WSL2 で Ollama + FastAPI バックエンドをバックグラウンド起動する。
- * WSL2 未起動など失敗した場合は retryDelay ms 後にリトライする。
+ * WSL2 で Ollama + FastAPI バックエンドを起動する。
+ * uvicorn は spawn でフォアグラウンド実行し WSL セッションを維持する
+ * （セッション終了による WSL2 自動シャットダウンを防ぐため）。
  */
 function launchBackend(retryDelay = 15_000) {
-  exec(
-    'wsl -- bash -c "~/projects/agent-team/scripts/start-backend.sh"',
-    (err, stdout) => {
-      if (stdout) console.log('[Backend]', stdout.trim())
-      if (err) {
-        console.warn(`[Backend] launch failed, retry in ${retryDelay / 1000}s:`, err.message)
-        setTimeout(() => launchBackend(retryDelay), retryDelay)
-      }
+  // Ollama を起動（既に起動済みならスキップ）
+  exec('wsl -- bash -c "mkdir -p ~/.local/log/voice-agent && pgrep -x ollama > /dev/null || nohup ollama serve > ~/.local/log/voice-agent/ollama.log 2>&1 &"')
+
+  // uvicorn をフォアグラウンドで起動（WSL セッションを維持するため spawn を使用）
+  backendProcess = spawn('wsl', [
+    '--', 'bash', '-c',
+    'source ~/projects/agent-team/.venv/bin/activate && ' +
+    'cd ~/projects/agent-team/backend && ' +
+    'uvicorn main:app --host 0.0.0.0 --port 8000'
+  ], { stdio: ['ignore', 'pipe', 'pipe'] })
+
+  backendProcess.stdout.on('data', d => console.log('[Backend]', d.toString().trim()))
+  backendProcess.stderr.on('data', d => console.log('[Backend]', d.toString().trim()))
+
+  backendProcess.on('exit', (code, signal) => {
+    backendProcess = null
+    if (!app.isQuitting) {
+      console.warn(`[Backend] exited (code=${code} signal=${signal}), retry in ${retryDelay / 1000}s`)
+      setTimeout(() => launchBackend(retryDelay), retryDelay)
     }
-  )
+  })
 }
 
 /**
@@ -180,6 +194,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  if (backendProcess) backendProcess.kill()
 })
 
 // トレイ常駐のため window-all-closed での自動終了を無効化
