@@ -6,8 +6,30 @@
   "scripts": {
     "dev": "concurrently -n renderer,electron -c cyan,yellow \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "build": "vite build",
+    "dist": "vite build && electron-builder",
     "start": "electron .",
     "preview": "vite preview"
+  },
+  "build": {
+    "appId": "com.okamoto.voice-agent",
+    "productName": "音声エージェント",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "portable",
+      "icon": "electron/icon.png"
+    },
+    "files": [
+      "dist/**",
+      "electron/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../scripts/start-backend.sh",
+        "to": "scripts/start-backend.sh"
+      }
+    ]
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -18,6 +40,7 @@
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
     "vite": "^6.0.7",
     "wait-on": "^8.0.1"
   }

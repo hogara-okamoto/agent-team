@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, session } = require('electron')
 const path = require('path')
+const { exec } = require('child_process')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -32,6 +33,65 @@ function setupPermissions() {
   })
 }
 
+/**
+ * WSL2 で Ollama + FastAPI バックエンドをバックグラウンド起動する。
+ * パッケージ版・開発版どちらからでも呼べるようにホームディレクトリを直接指定。
+ */
+function launchBackend() {
+  exec(
+    'wsl -- bash -c "~/projects/agent-team/scripts/start-backend.sh"',
+    (_err, stdout) => {
+      if (stdout) console.log('[Backend]', stdout.trim())
+    }
+  )
+}
+
+/**
+ * トレイメニューを構築して tray にセットする。
+ * 「自動起動 ON/OFF」切り替え後に自分自身を再呼び出ししてメニューを更新する。
+ */
+function buildTrayMenu(win, tray) {
+  const isAutoStart = app.isPackaged
+    ? app.getLoginItemSettings().openAtLogin
+    : false
+
+  const menu = Menu.buildFromTemplate([
+    {
+      label: '表示',
+      click: () => { win.show(); win.focus() },
+    },
+    {
+      label: '録音開始',
+      click: () => {
+        win.show()
+        win.focus()
+        win.webContents.send('start-recording')
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Windows 起動時に自動起動',
+      type: 'checkbox',
+      checked: isAutoStart,
+      // 開発モード（npm run dev）では動作しないため無効化
+      enabled: app.isPackaged,
+      click: (item) => {
+        app.setLoginItemSettings({ openAtLogin: item.checked })
+        buildTrayMenu(win, tray)
+      },
+    },
+    { type: 'separator' },
+    {
+      label: '終了',
+      click: () => {
+        app.isQuitting = true
+        app.quit()
+      },
+    },
+  ])
+  tray.setContextMenu(menu)
+}
+
 function createTray(win) {
   const iconPath = path.join(__dirname, 'icon.png')
   console.log('[Tray] icon path:', iconPath)
@@ -49,29 +109,7 @@ function createTray(win) {
   const tray = new Tray(icon)
   tray.setToolTip('音声エージェント')
 
-  const menu = Menu.buildFromTemplate([
-    {
-      label: '表示',
-      click: () => { win.show(); win.focus() },
-    },
-    {
-      label: '録音開始',
-      click: () => {
-        win.show()
-        win.focus()
-        win.webContents.send('start-recording')
-      },
-    },
-    { type: 'separator' },
-    {
-      label: '終了',
-      click: () => {
-        app.isQuitting = true
-        app.quit()
-      },
-    },
-  ])
-  tray.setContextMenu(menu)
+  buildTrayMenu(win, tray)
 
   // ダブルクリックでウィンドウを表示
   tray.on('double-click', () => { win.show(); win.focus() })
@@ -119,6 +157,7 @@ function createWindow() {
 app.isQuitting = false
 
 app.whenReady().then(() => {
+  launchBackend()
   setupPermissions()
   const win = createWindow()
   createTray(win)
