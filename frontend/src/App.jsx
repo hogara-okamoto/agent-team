@@ -24,11 +24,24 @@ export default function App() {
   // ウェイクワードモード
   const [wakeWordMode, setWakeWordMode] = useState(false)
 
-  // 起動時にバックエンドのヘルスを確認
+  // バックエンドのヘルスを定期チェック（未接続なら5秒ごと、接続済みなら30秒ごと）
   useEffect(() => {
-    checkHealth()
-      .then(setHealth)
-      .catch(() => setHealth({ status: 'error', components: {} }))
+    let timerId
+
+    const poll = () => {
+      checkHealth()
+        .then((h) => {
+          setHealth(h)
+          timerId = setTimeout(poll, 30_000)
+        })
+        .catch(() => {
+          setHealth({ status: 'error', components: {} })
+          timerId = setTimeout(poll, 5_000)
+        })
+    }
+
+    poll()
+    return () => clearTimeout(timerId)
   }, [])
 
   // システムトレイ・グローバルホットキーからの録音開始イベントを購読
