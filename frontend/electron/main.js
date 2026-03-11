@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, session } = require('electron')
 const path = require('path')
-const { exec, spawn } = require('child_process')
+const { exec } = require('child_process')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -33,33 +33,21 @@ function setupPermissions() {
   })
 }
 
-// WSL2 セッションを維持するプロセス（Electron 終了時にクリーンアップ）
-let wslKeepalive = null
-
 /**
  * WSL2 で Ollama + FastAPI バックエンドをバックグラウンド起動する。
- * WSL2 未起動など失敗した場合は retryDelay ms 後にリトライする。
- * 起動後は `wsl -- sleep infinity` でセッションを維持し、
- * nohup した ollama / uvicorn が WSL2 に強制終了されないようにする。
+ * スクリプトは ollama・uvicorn 両方の起動確認後に終了するため、
+ * プロセスが WSL2 セッション終了で kill されることはない。
+ * 失敗した場合は retryDelay ms 後にリトライする。
  */
 function launchBackend(retryDelay = 15_000) {
   exec(
     'wsl -- bash -c "~/projects/agent-team/scripts/start-backend.sh"',
+    { timeout: 180_000 },
     (err, stdout) => {
       if (stdout) console.log('[Backend]', stdout.trim())
       if (err) {
         console.warn(`[Backend] launch failed, retry in ${retryDelay / 1000}s:`, err.message)
         setTimeout(() => launchBackend(retryDelay), retryDelay)
-        return
-      }
-      // スクリプト終了後もWSL2 Ubuntu セッションを維持する
-      if (!wslKeepalive || wslKeepalive.exitCode !== null) {
-        wslKeepalive = spawn('wsl', ['--', 'sleep', 'infinity'], {
-          detached: true,
-          stdio: 'ignore',
-        })
-        wslKeepalive.unref()
-        console.log('[Backend] WSL2 keepalive started (pid:', wslKeepalive.pid, ')')
       }
     }
   )
@@ -195,7 +183,6 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
-  if (wslKeepalive) wslKeepalive.kill()
 })
 
 // トレイ常駐のため window-all-closed での自動終了を無効化
