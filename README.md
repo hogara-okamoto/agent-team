@@ -29,6 +29,9 @@
 - **ウェイクワード呼び出し** — 「エージェント」「岡本」と話しかけると自動で録音開始
 - **Windows 自動起動** — PC 起動時にトレイアイコン＋バックエンドが自動で立ち上がる
 - **メール送信エージェント** — 音声でアポ依頼 → クライアント検索 → メール文案生成 → Gmail 送信
+- **Web 検索エージェント** — 「調べて」「天気」「ニュース」で自動検索 → Google Custom Search / DuckDuckGo → LLM が要約して回答
+- **カレンダーエージェント** — 「予定を追加して」「今日の予定は？」でローカル JSON カレンダーを管理
+- **日付・曜日の正確な回答** — バックエンドで計算した正確な日付情報を LLM に注入（LLM の誤答を防止）
 
 ---
 
@@ -46,13 +49,17 @@
 ┌───────────────▼──────────────────────┐
 │  FastAPI バックエンド（WSL2）         │
 │                                      │
-│  POST /transcribe   WAV  → テキスト  │
-│  POST /chat         テキスト → 返答  │
-│  POST /synthesize   テキスト → WAV   │
-│  GET  /health       状態確認         │
-│  POST /wakeword     ウェイクワード判定│
-│  POST /email/draft  メール文案生成   │
-│  POST /email/send   Gmail 送信       │
+│  POST /transcribe      WAV  → テキスト       │
+│  POST /chat            テキスト → 返答       │
+│  POST /synthesize      テキスト → WAV        │
+│  GET  /health          状態確認              │
+│  POST /wakeword        ウェイクワード判定     │
+│  POST /email/draft     メール文案生成        │
+│  POST /email/send      Gmail 送信            │
+│  POST /search          Web 検索              │
+│  POST /calendar/add    予定追加              │
+│  GET  /calendar/list   予定取得              │
+│  DELETE /calendar/delete 予定削除            │
 └──────────────────────────────────────┘
 ```
 
@@ -207,10 +214,13 @@ agent-team/
 │   ├── .env                # ※ git 管理外・各マシンで手動作成（GMAIL_ADDRESS 等）
 │   └── routers/
 │       ├── transcribe.py
-│       ├── chat.py         # intent 検出（メール送信）含む
+│       ├── chat.py             # ルートエージェント（intent 振り分け）
+│       ├── intent_classifier.py # intent 分類（email/web_search/calendar/general）
 │       ├── synthesize.py
-│       ├── wakeword.py     # ウェイクワード判定
-│       └── email_agent.py  # メール文案生成・Gmail 送信
+│       ├── wakeword.py         # ウェイクワード判定
+│       ├── email_agent.py      # メール文案生成・Gmail 送信
+│       ├── web_search.py       # Web 検索（Google Custom Search / DuckDuckGo）
+│       └── calendar_agent.py   # カレンダー管理（ローカル JSON）
 ├── data/
 │   └── clients.json        # クライアント一覧（name / company / email）
 ├── frontend/               # Electron + React フロントエンド
@@ -247,9 +257,13 @@ agent-team/
 - [x] ウェイクワードで呼び出し（「エージェント」「岡本」で自動録音開始）
 - [x] Windows 起動時に自動起動
 - [x] メール送信エージェント（音声でアポ依頼 → Gmail 送信）
+- [x] ルートエージェント振り分けロジック（intent_classifier）
+- [x] Web 検索エージェント（Google Custom Search / DuckDuckGo）
+- [x] カレンダーエージェント（ローカル JSON）
+- [x] 日付・曜日の正確な回答（バックエンド計算 → LLM コンテキスト注入）
 - [ ] 会話履歴の永続化
-- [ ] 専門エージェント（ファイル操作・Web 検索・コード実行）
-  - [x] メール送信エージェント（アポイント日時の調整・Gmail 送信）
+- [ ] カレンダーを Google Calendar API（OAuth2）に移行
+- [ ] 見積書作成エージェント（品目・数量・単価 → PDF 生成）
 
 ---
 

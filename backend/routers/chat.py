@@ -9,12 +9,13 @@ intent_classifier で intent を判定し、専門エージェントへ振り分
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from dependencies import get_llm_client
+from dependencies import get_llm_client, get_wake_words
 from routers.intent_classifier import (
     INTENT_EMAIL,
     INTENT_WEB_SEARCH,
@@ -90,6 +91,56 @@ def _do_search(query: str, max_results: int = 5) -> list[dict]:
 
 
 # ──────────────────────────────────────────────
+# 日付コンテキスト注入ヘルパー
+# ──────────────────────────────────────────────
+
+_WEEKDAY_JP = ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"]
+_DATE_MENTION_RE = re.compile(
+    r"(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?|\d{1,2}月\d{1,2}日|\d{8})"
+)
+
+
+def _build_date_context(message: str) -> str:
+    """メッセージ内の日付と今日の日付を正確に計算してコンテキスト文字列を返す。"""
+    from datetime import date, datetime
+
+    today = date.today()
+    lines = [f"今日の日付: {today} ({_WEEKDAY_JP[today.weekday()]})"]
+
+    for m in _DATE_MENTION_RE.finditer(message):
+        raw = m.group(0)
+        # パース試行
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y年%m月%d日", "%Y%m%d"):
+            try:
+                d = datetime.strptime(raw.replace("年", "-").replace("月", "-").replace("日", ""), fmt.replace("年","-").replace("月","-").replace("日","")).date()
+                lines.append(f"{raw} → {d} ({_WEEKDAY_JP[d.weekday()]})")
+                break
+            except ValueError:
+                continue
+        else:
+            # MM月DD日 形式
+            mm = re.match(r"(\d{1,2})月(\d{1,2})日?$", raw)
+            if mm:
+                year = today.year
+                try:
+                    from datetime import date as _date
+                    d = _date(year, int(mm.group(1)), int(mm.group(2)))
+                    if d < today:
+                        d = _date(year + 1, int(mm.group(1)), int(mm.group(2)))
+                    lines.append(f"{raw} → {d} ({_WEEKDAY_JP[d.weekday()]})")
+                except ValueError:
+                    pass
+
+    return "\n".join(lines)
+
+
+def _needs_date_context(message: str) -> bool:
+    """日付・曜日に関する質問かどうか判定する。"""
+    DATE_QUERY_WORDS = ["何曜日", "曜日", "何日", "今日", "明日", "明後日", "今週", "来週", "日付", "今年", "何年"]
+    return any(w in message for w in DATE_QUERY_WORDS) or bool(_DATE_MENTION_RE.search(message))
+
+
+# ──────────────────────────────────────────────
 # エンドポイント
 # ──────────────────────────────────────────────
 
@@ -104,8 +155,13 @@ async def chat(
     検索結果を LLM コンテキストに注入してから返答を生成する。
     これにより LLM が検索結果を参照でき、フォローアップ質問にも対応できる。
     """
-    intent, params = await classify_intent(req.message, llm)
-    print(f"[chat] message={req.message!r}  intent={intent}  params={params}")
+    # ウェイクワードをメッセージ先頭から除去（STT がウェイクワードを含む場合の対策）
+    message = req.message
+    for ww in get_wake_words():
+        message = re.sub(rf"^{re.escape(ww)}[、,\s　]*", "", message).strip()
+
+    intent, params = await classify_intent(message, llm)
+    print(f"[chat] message={message!r}  intent={intent}  params={params}")
 
     # ── メール送信 ──────────────────────────────
     if intent == INTENT_EMAIL and params:
@@ -196,8 +252,15 @@ async def chat(
         )
 
     # ── 通常会話 ────────────────────────────────
+    # 日付・曜日に関する質問は正確な値をコンテキストに注入
+    if _needs_date_context(message):
+        date_ctx = _build_date_context(message)
+        llm_message = f"{message}\n\n[日付情報（正確）]\n{date_ctx}\n\n上記の日付情報をもとに正確に答えてください。"
+    else:
+        llm_message = message
+
     try:
-        reply = await asyncio.to_thread(llm.chat, req.message)
+        reply = await asyncio.to_thread(llm.chat, llm_message)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"LLM 推論エラー: {exc}") from exc
 

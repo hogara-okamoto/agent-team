@@ -11,14 +11,14 @@
 
 ---
 
-## 現在の動作状況（2026-03-10 時点）
+## 現在の動作状況（2026-03-11 時点）
 
 | コンポーネント | 状態 | 実装 |
 |---|---|---|
 | STT（音声認識） | ✅ 完了 | faster-whisper large-v3-turbo（GPU: RTX 4000 Ada / large-v3 比 8倍高速） |
 | LLM（推論） | ✅ 完了 | Ollama + qwen3.5:9b（thinking: false / keep_alive 5分） |
 | TTS（日本語音声合成） | ✅ 完了 | VOICEVOX（主）/ open_jtalk / Kokoro-82M 切り替え対応 |
-| FastAPI バックエンド | ✅ 完了 | `/transcribe` `/chat` `/synthesize` `/health` `/email/draft` `/email/send` `/wakeword` |
+| FastAPI バックエンド | ✅ 完了 | `/transcribe` `/chat` `/synthesize` `/health` `/email/draft` `/email/send` `/wakeword` `/search` `/calendar` |
 | Electron フロントエンド | ✅ 完了 | 録音UI・会話ログ・テキスト入力 |
 | マイク入力 | ✅ 完了 | Electron Web Audio API（Electron 33 / Chromium 130 対応） |
 | スピーカー出力（リアルタイム） | ✅ 完了 | Electron `<Audio>` 再生 |
@@ -29,6 +29,10 @@
 | ウェイクワード呼び出し | ✅ 完了 | 「エージェント」「岡本」発話で自動録音開始（Whisper 判定） |
 | Windows 自動起動 | ✅ 完了 | portable .exe + app.setLoginItemSettings + start-backend.sh |
 | メール送信エージェント | ✅ 完了 | 音声でアポ依頼 → クライアント検索 → LLM でメール文案生成 → Gmail 送信 |
+| ルートエージェント振り分け | ✅ 完了 | `intent_classifier.py` — キーワード+LLM ハイブリッド分類（email / web_search / calendar / general） |
+| Web 検索エージェント | ✅ 完了 | Google Custom Search API 優先・DuckDuckGo フォールバック・LLM コンテキスト注入 |
+| カレンダーエージェント（ローカル） | ✅ 完了 | ローカル JSON 保存（`backend/data/calendar.json`）・予定追加・確認 |
+| 日付・曜日の正確な回答 | ✅ 完了 | バックエンドで計算した日付情報を LLM コンテキストに注入 |
 
 ---
 
@@ -130,11 +134,13 @@ Windows 起動時に自動起動
 
 ```
 ルートエージェント
-├── メール送信エージェント ✅ 実装済み（アポイント日時の調整・Gmail 送信）
-├── ファイル操作エージェント
-├── Web 検索エージェント（ローカルキャッシュ）
-├── コード実行エージェント
-├── カレンダー／タスク管理エージェント
+├── メール送信エージェント    ✅ 実装済み（アポイント日時の調整・Gmail 送信）
+├── Web 検索エージェント      ✅ 実装済み（Google Custom Search / DuckDuckGo フォールバック）
+├── カレンダーエージェント    ✅ 実装済み（ローカル JSON / 予定追加・確認）
+│   └── 【次期】Google Calendar API 連携（OAuth2）
+├── 見積書作成エージェント    📋 未実装（次回実装予定）
+├── ファイル操作エージェント  📋 未実装
+├── コード実行エージェント    📋 未実装
 └── （追加予定）
 ```
 
@@ -148,5 +154,9 @@ Windows 起動時に自動起動
 4. ~~ウェイクワード検出を実装する~~ ✅ 完了（Whisper 判定方式）
 5. ~~Windows 起動時の自動起動~~ ✅ 完了
 6. ~~メール送信エージェント（アポイント日時調整）~~ ✅ 完了
-7. 会話履歴を SQLite または JSON ファイルで永続化する
-8. ルートエージェントの専門エージェント振り分けロジックを設計する
+7. ~~ルートエージェントの専門エージェント振り分けロジックを設計する~~ ✅ 完了
+8. ~~Web 検索エージェント（Google Custom Search / DuckDuckGo）~~ ✅ 完了
+9. ~~カレンダーエージェント（ローカル JSON）~~ ✅ 完了
+10. 会話履歴を SQLite または JSON ファイルで永続化する
+11. **カレンダーエージェントを Google Calendar API（OAuth2）に移行する**
+12. **見積書作成エージェントを実装する**（品目・数量・単価 → PDF 生成）
