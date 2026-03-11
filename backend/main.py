@@ -27,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from dependencies import lifespan
 from routers import chat, synthesize, transcribe, wakeword
-from routers import email_agent
+from routers import email_agent, web_search
 
 app = FastAPI(
     title="Voice Chatbot API",
@@ -48,6 +48,7 @@ app.include_router(chat.router)
 app.include_router(synthesize.router)
 app.include_router(wakeword.router)
 app.include_router(email_agent.router)
+app.include_router(web_search.router)
 
 
 @app.get("/health", tags=["system"])

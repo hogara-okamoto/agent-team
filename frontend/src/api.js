@@ -75,3 +75,15 @@ export async function clearHistory() {
   const res = await fetch(`${API_BASE}/chat/history`, { method: 'DELETE' })
   return res.json()
 }
+
+// webSearch() は { query, results: [{title, body, href}], summary } を返す
+export async function webSearch(query, maxResults = 5) {
+  const res = await fetch(`${API_BASE}/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, max_results: maxResults }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.detail ?? 'web search error')
+  return data
+}

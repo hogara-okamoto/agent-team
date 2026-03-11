@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { checkHealth, transcribe, chat, synthesize, clearHistory } from './api'
+import { checkHealth, transcribe, chat, synthesize, clearHistory, webSearch } from './api'
 import ChatLog from './components/ChatLog'
 import RecordButton from './components/RecordButton'
 import EmailDraftModal from './components/EmailDraftModal'
@@ -79,6 +79,32 @@ export default function App() {
     if (data.action === 'send_email' && data.action_params) {
       setEmailParams(data.action_params)
       setEmailConfirm('')
+    }
+
+    // Web 検索 intent が検出された場合は検索を実行して結果を表示
+    if (data.action === 'web_search' && data.action_params?.query) {
+      try {
+        const result = await webSearch(data.action_params.query)
+        // 検索結果をチャットに表示（要約 + 上位3件のタイトル）
+        const topLinks = result.results.slice(0, 3)
+          .map((r, i) => `[${i + 1}] ${r.title}`)
+          .join('\n')
+        const searchMessage = `【検索: ${result.query}】\n${result.summary}\n\n${topLinks}`
+        appendMessage('assistant', searchMessage)
+
+        // 要約を読み上げ
+        try {
+          setStatus('synthesizing')
+          const wavBlob = await synthesize(result.summary)
+          playAudio(wavBlob)
+        } catch {
+          // TTS 失敗は無視
+        }
+        setStatus('idle')
+        return
+      } catch (err) {
+        appendMessage('assistant', `検索エラー: ${err.message}`)
+      }
     }
 
     // TTS が使えない場合はエラーを無視してテキスト表示のみ
