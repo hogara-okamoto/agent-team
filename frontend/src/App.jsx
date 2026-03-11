@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { checkHealth, transcribe, chat, synthesize, clearHistory, webSearch } from './api'
+import { checkHealth, transcribe, chat, synthesize, clearHistory } from './api'
 import ChatLog from './components/ChatLog'
 import RecordButton from './components/RecordButton'
 import EmailDraftModal from './components/EmailDraftModal'
@@ -81,30 +81,23 @@ export default function App() {
       setEmailConfirm('')
     }
 
-    // Web 検索 intent が検出された場合は検索を実行して結果を表示
-    if (data.action === 'web_search' && data.action_params?.query) {
-      try {
-        const result = await webSearch(data.action_params.query)
-        // 検索結果をチャットに表示（要約 + 上位3件のタイトル）
-        const topLinks = result.results.slice(0, 3)
-          .map((r, i) => `[${i + 1}] ${r.title}`)
-          .join('\n')
-        const searchMessage = `【検索: ${result.query}】\n${result.summary}\n\n${topLinks}`
-        appendMessage('assistant', searchMessage)
-
-        // 要約を読み上げ
-        try {
-          setStatus('synthesizing')
-          const wavBlob = await synthesize(result.summary)
-          playAudio(wavBlob)
-        } catch {
-          // TTS 失敗は無視
-        }
-        setStatus('idle')
-        return
-      } catch (err) {
-        appendMessage('assistant', `検索エラー: ${err.message}`)
+    // Web 検索 intent: バックエンドで検索済み・LLM が結果を踏まえて返答済み
+    if (data.action === 'web_search' && data.action_params) {
+      const { query, results = [] } = data.action_params
+      // 上位3件のリンクをチャットに追加表示
+      if (results.length > 0) {
+        const topLinks = results.slice(0, 3).map((r, i) => `[${i + 1}] ${r.title}`).join('\n')
+        appendMessage('assistant', `【検索: ${query}】\n${topLinks}`)
       }
+      // LLM の返答（検索結果を踏まえた内容）を読み上げ
+      try {
+        setStatus('synthesizing')
+        const wavBlob = await synthesize(replyText)
+        playAudio(wavBlob)
+      } catch {
+        // TTS 未対応環境では無音のまま続行
+      }
+      return
     }
 
     // TTS が使えない場合はエラーを無視してテキスト表示のみ

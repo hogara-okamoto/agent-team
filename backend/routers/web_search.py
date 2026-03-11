@@ -47,12 +47,15 @@ class SearchResponse(BaseModel):
 def _do_search(query: str, max_results: int) -> list[dict]:
     """DuckDuckGo でテキスト検索する（同期関数、to_thread で呼ぶ）。"""
     try:
-        from duckduckgo_search import DDGS  # type: ignore
-    except ImportError as exc:
-        raise RuntimeError(
-            "duckduckgo-search がインストールされていません。"
-            " pip install duckduckgo-search を実行してください。"
-        ) from exc
+        from ddgs import DDGS  # type: ignore
+    except ImportError:
+        try:
+            from duckduckgo_search import DDGS  # type: ignore[no-redef]
+        except ImportError as exc:
+            raise RuntimeError(
+                "ddgs がインストールされていません。"
+                " pip install ddgs を実行してください。"
+            ) from exc
     with DDGS() as ddgs:
         return list(ddgs.text(query, max_results=max_results))
 

@@ -122,23 +122,36 @@ async def _extract_email_params(text: str, llm) -> Optional[dict]:
 # Web 検索 intent
 # ──────────────────────────────────────────────
 
-# 「調べて」「検索して」など明示的な検索依頼のみ検出する（"教えて" は除外）
-_SEARCH_KEYWORDS = [
+# 明示的な検索動詞（"教えて" は汎用すぎるため除外）
+_SEARCH_VERBS = [
     "検索して", "検索する", "検索お願い",
     "調べて", "調べてほしい", "調べてください", "調べたい",
     "ネットで", "インターネットで", "ウェブで", "Web検索",
     "最新ニュース", "ニュースを調",
 ]
+# LLM が答えられないリアルタイムデータを含む語（動詞なしでも検索を起動）
+_REALTIME_KEYWORDS = [
+    "天気", "気温", "天気予報", "降水確率",
+    "為替", "株価", "レート", "ドル円",
+    "ニュース", "最新の", "最新情報",
+]
+_SEARCH_KEYWORDS = _SEARCH_VERBS + _REALTIME_KEYWORDS
 
-# 「〇〇を調べて」「〇〇について検索して」からクエリを取り出す
+# 「〇〇を調べて」「〇〇について検索して」「〇〇を教えて」からクエリを取り出す
 _SEARCH_QUERY_RE = re.compile(
     r"(.+?)(?:を|について|に関して)?\s*"
-    r"(?:検索して|調べて|ネットで|インターネットで|ウェブで|Web検索)"
+    r"(?:検索して|調べて|ネットで|インターネットで|ウェブで|Web検索|教えて)"
 )
-_LATEST_RE = re.compile(r"(?:最新の?|今の?)\s*(.+?)(?:について|に関して|を)?$")
+# 「今日」「今年」など複合語にはマッチしないよう (?!日|年|月|週|夜|朝|後) を追加
+_LATEST_RE = re.compile(r"(?:最新の?|今(?!日|年|月|週|夜|朝|後)の?)\s*(.+?)(?:について|に関して|を)?$")
 _FILLER_RE = re.compile(r"^(?:ちょっと|少し|すこし|ちょいと)\s*")
 # 「岡本さん、」「エージェント、」などの呼びかけ前置きを除去
 _CALL_PREFIX_RE = re.compile(r"^[^\s、。！？]{1,8}(?:さん|様|くん|ちゃん)?[、,]\s*")
+# 末尾の依頼動詞を除去するフォールバック用（「〇〇を教えて東京」→「東京」が残るのを防ぐため
+# 全体をクエリとして使う前に整形する）
+_REQUEST_SUFFIX_RE = re.compile(
+    r"(?:を|について|に関して)?\s*(?:教えて|知りたい|知らせて)[^。！？]*$"
+)
 
 
 def _has_search_keyword(text: str) -> bool:
@@ -150,15 +163,24 @@ def _extract_search_query(text: str) -> str:
     # 呼びかけ前置き（「岡本さん、」など）を除去してから処理
     clean = _CALL_PREFIX_RE.sub("", text.strip())
 
+    # パターン1: 「〇〇を調べて」「〇〇について検索して」「〇〇を教えて」
     m = _SEARCH_QUERY_RE.search(clean)
     if m:
         query = _FILLER_RE.sub("", m.group(1).strip())
         if query:
-            return query
-    m = _LATEST_RE.search(clean)
+            # マッチ後に残った文字列（「東京」など）があれば末尾に追加
+            # 「ください」「下さい」などの丁寧語は除去
+            after = re.sub(r"^(?:ください|下さい|ね|よ|な)\s*", "", clean[m.end():].strip()).rstrip("。、！？")
+            return f"{query} {after}".strip() if after else query
+
+    # パターン2: 「最新の〇〇」「今の〇〇」（文頭のみ）
+    m = _LATEST_RE.match(clean)
     if m:
         return m.group(1).strip()
-    return clean
+
+    # フォールバック: 末尾の依頼動詞を除去してクエリとする
+    fallback = _REQUEST_SUFFIX_RE.sub("", clean).strip().rstrip("。、！？")
+    return fallback if fallback else clean
 
 
 # ──────────────────────────────────────────────
