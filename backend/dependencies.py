@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -55,21 +56,28 @@ async def lifespan(app: FastAPI):
         print(f"[WARNING] STT の初期化をスキップしました: {e}")
 
     # --- LLM ---
-    try:
-        from src.llm.client import OllamaClient
-        client = OllamaClient(
-            model=settings.llm.model,
-            base_url=settings.llm.base_url,
-            system_prompt=settings.llm.system_prompt,
-            keep_alive=settings.llm.keep_alive,
-            thinking=settings.llm.thinking,
-        )
-        # Ollama サーバーへの疎通確認
-        client._client.list()
-        _llm_client = client
-    except Exception as e:
-        _init_errors["llm"] = str(e)
-        print(f"[WARNING] LLM の初期化をスキップしました: {e}")
+    # Windows 起動時は Ollama の準備に時間がかかるため、最大5回リトライする
+    for _attempt in range(5):
+        try:
+            from src.llm.client import OllamaClient
+            _candidate = OllamaClient(
+                model=settings.llm.model,
+                base_url=settings.llm.base_url,
+                system_prompt=settings.llm.system_prompt,
+                keep_alive=settings.llm.keep_alive,
+                thinking=settings.llm.thinking,
+            )
+            # Ollama サーバーへの疎通確認
+            _candidate._client.list()
+            _llm_client = _candidate
+            break
+        except Exception as e:
+            if _attempt < 4:
+                print(f"[WARNING] LLM 接続失敗 (試行 {_attempt + 1}/5)、10秒後にリトライ: {e}")
+                await asyncio.sleep(10)
+            else:
+                _init_errors["llm"] = str(e)
+                print(f"[WARNING] LLM の初期化をスキップしました: {e}")
 
     # --- TTS ---
     try:
