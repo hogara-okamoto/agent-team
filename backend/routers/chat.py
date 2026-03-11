@@ -18,6 +18,7 @@ from dependencies import get_llm_client
 from routers.intent_classifier import (
     INTENT_EMAIL,
     INTENT_WEB_SEARCH,
+    INTENT_CALENDAR,
     classify_intent,
 )
 
@@ -39,10 +40,44 @@ class ChatResponse(BaseModel):
 
 
 # ──────────────────────────────────────────────
-# 検索ヘルパー（web_search.py の _do_search を再利用）
+# 検索ヘルパー
+# Google Custom Search API が設定されていれば優先、なければ DuckDuckGo にフォールバック
 # ──────────────────────────────────────────────
 
+def _google_search(query: str, api_key: str, cx: str, max_results: int) -> list[dict]:
+    """Google Custom Search JSON API で検索する。"""
+    import httpx
+    resp = httpx.get(
+        "https://www.googleapis.com/customsearch/v1",
+        params={
+            "key": api_key,
+            "cx": cx,
+            "q": query,
+            "num": min(max_results, 10),
+            "lr": "lang_ja",
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    items = resp.json().get("items", [])
+    return [
+        {"title": i.get("title", ""), "body": i.get("snippet", ""), "href": i.get("link", "")}
+        for i in items
+    ]
+
+
 def _do_search(query: str, max_results: int = 5) -> list[dict]:
+    """Google Custom Search 優先、未設定なら DuckDuckGo にフォールバック。"""
+    import os
+    api_key = os.getenv("GOOGLE_API_KEY", "")
+    cx = os.getenv("GOOGLE_CX", "")
+
+    if api_key and cx:
+        print(f"[search] Google Custom Search: {query!r}")
+        return _google_search(query, api_key, cx, max_results)
+
+    # フォールバック: DuckDuckGo
+    print(f"[search] DuckDuckGo (Google 未設定): {query!r}")
     try:
         from ddgs import DDGS  # type: ignore
     except ImportError:
@@ -79,6 +114,45 @@ async def chat(
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"LLM 推論エラー: {exc}") from exc
         return ChatResponse(reply=reply, action=INTENT_EMAIL, action_params=params)
+
+    # ── カレンダー ──────────────────────────────
+    if intent == INTENT_CALENDAR and params:
+        from routers.calendar_agent import get_events_text, add_event_from_text
+
+        operation = params.get("operation", "list")
+
+        if operation == "add":
+            title = params.get("title", "予定")
+            date_str = params.get("date", "")
+            time_str = params.get("time", "")
+            note = params.get("note", "")
+            result_text = await asyncio.to_thread(
+                add_event_from_text, title, date_str, time_str, note
+            )
+            return ChatResponse(
+                reply=result_text,
+                action=INTENT_CALENDAR,
+                action_params={"operation": "add", "date": date_str, "title": title},
+            )
+        else:
+            # list
+            date_str = params.get("date", "")
+            events_text = await asyncio.to_thread(get_events_text, date_str)
+            # LLM に自然な文章で返答させる
+            context_message = (
+                f"{req.message}\n\n"
+                f"[カレンダー情報]\n{events_text}\n\n"
+                f"上記の情報をもとに、日本語で自然に答えてください。"
+            )
+            try:
+                reply = await asyncio.to_thread(llm.chat, context_message)
+            except Exception as exc:
+                raise HTTPException(status_code=503, detail=f"LLM 推論エラー: {exc}") from exc
+            return ChatResponse(
+                reply=reply,
+                action=INTENT_CALENDAR,
+                action_params={"operation": "list", "date": date_str, "events_text": events_text},
+            )
 
     # ── Web 検索 ────────────────────────────────
     if intent == INTENT_WEB_SEARCH and params:

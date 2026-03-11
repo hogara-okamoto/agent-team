@@ -42,6 +42,8 @@ export default function useWakeWord({ onDetected, canTrigger = true }) {
 
   // 非同期チェック中フラグ（連続送信防止）
   const isCheckingRef = useRef(false)
+  // onDetected 発火後のクールダウンフラグ（2重トリガー防止）
+  const isTriggeredRef = useRef(false)
 
   // 最新の canTrigger を onaudioprocess 内から参照できるように ref に同期
   const canTriggerRef = useRef(canTrigger)
@@ -74,8 +76,11 @@ export default function useWakeWord({ onDetected, canTrigger = true }) {
       const blob = new Blob([wavBuffer], { type: 'audio/wav' })
       const result = await checkWakeWord(blob)
 
-      if (result.detected && canTriggerRef.current) {
+      if (result.detected && canTriggerRef.current && !isTriggeredRef.current) {
+        isTriggeredRef.current = true
         onDetected?.(result.text)
+        // 3秒のクールダウン後にリセット
+        setTimeout(() => { isTriggeredRef.current = false }, 3000)
       }
     } catch {
       // ネットワークエラー等は無視してモニタリングを継続

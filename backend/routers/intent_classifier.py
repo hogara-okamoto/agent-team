@@ -18,6 +18,7 @@ from typing import Optional
 # ──────────────────────────────────────────────
 INTENT_EMAIL = "send_email"
 INTENT_WEB_SEARCH = "web_search"
+INTENT_CALENDAR = "calendar"
 INTENT_GENERAL = "general"
 
 # ──────────────────────────────────────────────
@@ -184,6 +185,74 @@ def _extract_search_query(text: str) -> str:
 
 
 # ──────────────────────────────────────────────
+# カレンダー intent
+# ──────────────────────────────────────────────
+
+_CALENDAR_ADD_KEYWORDS = [
+    "予定を追加", "予定追加", "スケジュール追加", "スケジュールを追加",
+    "予定を入れて", "予定を登録", "カレンダーに追加",
+    "予定を作って", "予定をいれて", "アポを入れて", "アポを登録",
+]
+_CALENDAR_LIST_KEYWORDS = [
+    "予定を確認", "予定は", "予定を教えて", "スケジュールを確認",
+    "スケジュールは", "スケジュールを教えて", "カレンダーを確認",
+    "今日の予定", "明日の予定", "明後日の予定",
+    "今週の予定", "何か予定", "予定がある",
+]
+_CALENDAR_KEYWORDS = _CALENDAR_ADD_KEYWORDS + _CALENDAR_LIST_KEYWORDS
+
+
+def _has_calendar_keyword(text: str) -> bool:
+    return any(kw in text for kw in _CALENDAR_KEYWORDS)
+
+
+def _is_calendar_add(text: str) -> bool:
+    return any(kw in text for kw in _CALENDAR_ADD_KEYWORDS)
+
+
+async def _extract_calendar_add_params(text: str, llm) -> dict:
+    """予定追加のパラメータを LLM で抽出する。"""
+    from routers.calendar_agent import parse_date_str, parse_time_str
+
+    result = await _llm_json(
+        f"次の発言から予定追加のパラメータを抽出してください。\n"
+        f"発言: {text}\n\n"
+        f"JSONのみ出力（不明な項目は空文字）:\n"
+        f'{{"title":"予定のタイトル","date_str":"日時の表現(例:明日,3月15日など)","time_str":"時刻の表現(例:14時,午後3時など)","note":"備考"}}',
+        llm,
+    )
+    date_str_raw = (result or {}).get("date_str") or ""
+    time_str_raw = (result or {}).get("time_str") or ""
+    title = (result or {}).get("title") or ""
+    note = (result or {}).get("note") or ""
+
+    # LLM が取り出した日付・時刻テキストをパース
+    date_parsed = parse_date_str(date_str_raw or text)
+    time_parsed = parse_time_str(time_str_raw or text)
+
+    # タイトルが抽出できなかった場合は正規表現でフォールバック
+    if not title:
+        # 「〇〇を追加して」「〇〇の予定」などからタイトルを取り出す
+        m = re.search(r"「(.+?)」", text)
+        if m:
+            title = m.group(1)
+        else:
+            m = re.search(r"(.+?)(?:を|の予定|のアポ|をカレンダー|を追加|を登録|を入れて)", text)
+            if m:
+                title = m.group(1).strip()
+            else:
+                title = "予定"
+
+    return {
+        "operation": "add",
+        "title": title,
+        "date": date_parsed,
+        "time": time_parsed,
+        "note": note,
+    }
+
+
+# ──────────────────────────────────────────────
 # メイン分類関数
 # ──────────────────────────────────────────────
 
@@ -206,10 +275,21 @@ async def classify_intent(
         if params:
             return INTENT_EMAIL, params
 
-    # 2. Web 検索 intent
+    # 2. カレンダー intent
+    if _has_calendar_keyword(message):
+        if _is_calendar_add(message):
+            params = await _extract_calendar_add_params(message, llm)
+            return INTENT_CALENDAR, params
+        else:
+            # 予定確認: 日付を解析
+            from routers.calendar_agent import parse_date_str
+            date_str = parse_date_str(message)
+            return INTENT_CALENDAR, {"operation": "list", "date": date_str}
+
+    # 3. Web 検索 intent
     if _has_search_keyword(message):
         query = _extract_search_query(message)
         return INTENT_WEB_SEARCH, {"query": query}
 
-    # 3. 通常会話（LLM にそのまま渡す）
+    # 4. 通常会話（LLM にそのまま渡す）
     return INTENT_GENERAL, None
