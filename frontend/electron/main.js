@@ -180,7 +180,7 @@ app.whenReady().then(() => {
   ipcMain.handle('open-external', (_event, url) => {
     // YouTube は Chrome で明示的に開く（停止時に chrome プロセスで特定できるように）
     if (url.includes('youtube.com')) {
-      exec(`start chrome "${url}"`)
+      exec(`start chrome --autoplay-policy=no-user-gesture-required "${url}"`)
     } else {
       shell.openExternal(url)
     }
