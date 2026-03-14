@@ -54,10 +54,17 @@ class WhisperTranscriber:
                 str(tmp_path),
                 language=self.language,
                 beam_size=5,
+                # 日本語の長文を正確に認識させるためのプロンプト
+                initial_prompt="以下は日本語の音声です。句読点を含む自然な日本語で書き起こしてください。",
+                # 長文中の自然な間でセグメントが分断されないよう閾値を上げる
                 vad_filter=True,
-                vad_parameters={"min_silence_duration_ms": 500},
+                vad_parameters={
+                    "min_silence_duration_ms": 800,   # 500ms→800ms: 短い間では分断しない
+                    "speech_pad_ms": 200,             # 発話前後に余白を追加
+                },
+                condition_on_previous_text=True,      # セグメント間の文脈を引き継ぐ
             )
-            text = " ".join(seg.text.strip() for seg in segments)
+            text = "".join(seg.text.strip() for seg in segments)
         finally:
             tmp_path.unlink(missing_ok=True)
 

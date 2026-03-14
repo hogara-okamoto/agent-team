@@ -15,6 +15,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from chat_history import append_turn
 from dependencies import get_llm_client, get_wake_words
 from routers.intent_classifier import (
     INTENT_EMAIL,
@@ -171,6 +172,8 @@ async def chat(
             reply: str = await asyncio.to_thread(llm.chat, req.message)
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"LLM 推論エラー: {exc}") from exc
+        append_turn("user", message, intent=intent)
+        append_turn("assistant", reply)
         return ChatResponse(reply=reply, action=INTENT_EMAIL, action_params=params)
 
     # ── カレンダー ──────────────────────────────
@@ -187,6 +190,10 @@ async def chat(
             result_text = await asyncio.to_thread(
                 add_event_from_text, title, date_str, time_str, note
             )
+            append_turn("user", message, intent=intent)
+            append_turn("assistant", result_text)
+            llm.history.append({"role": "user", "content": message})
+            llm.history.append({"role": "assistant", "content": result_text})
             return ChatResponse(
                 reply=result_text,
                 action=INTENT_CALENDAR,
@@ -206,6 +213,8 @@ async def chat(
                 reply = await asyncio.to_thread(llm.chat, context_message)
             except Exception as exc:
                 raise HTTPException(status_code=503, detail=f"LLM 推論エラー: {exc}") from exc
+            append_turn("user", message, intent=intent)
+            append_turn("assistant", reply)
             return ChatResponse(
                 reply=reply,
                 action=INTENT_CALENDAR,
@@ -214,8 +223,13 @@ async def chat(
 
     # ── YouTube 停止 ─────────────────────────────
     if intent == INTENT_YOUTUBE_STOP:
+        _yt_stop_reply = "YouTubeを停止します。"
+        append_turn("user", message, intent=intent)
+        append_turn("assistant", _yt_stop_reply)
+        llm.history.append({"role": "user", "content": message})
+        llm.history.append({"role": "assistant", "content": _yt_stop_reply})
         return ChatResponse(
-            reply="YouTubeを停止します。",
+            reply=_yt_stop_reply,
             action=INTENT_YOUTUBE_STOP,
             action_params={},
         )
@@ -234,6 +248,10 @@ async def chat(
             url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}"
             reply = f"「{query}」をYouTubeで検索します。"
 
+        append_turn("user", message, intent=intent)
+        append_turn("assistant", reply)
+        llm.history.append({"role": "user", "content": message})
+        llm.history.append({"role": "assistant", "content": reply})
         return ChatResponse(
             reply=reply,
             action=INTENT_YOUTUBE,
@@ -275,6 +293,8 @@ async def chat(
             {"title": r.get("title", ""), "body": r.get("body", ""), "href": r.get("href", "")}
             for r in raw_results
         ]
+        append_turn("user", message, intent=intent)
+        append_turn("assistant", reply)
         return ChatResponse(
             reply=reply,
             action=INTENT_WEB_SEARCH,
@@ -294,6 +314,8 @@ async def chat(
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"LLM 推論エラー: {exc}") from exc
 
+    append_turn("user", message, intent="general")
+    append_turn("assistant", reply)
     return ChatResponse(reply=reply)
 
 

@@ -70,6 +70,12 @@ async def lifespan(app: FastAPI):
             # Ollama サーバーへの疎通確認
             _candidate._client.list()
             _llm_client = _candidate
+            # 永続化済みの会話履歴をロード
+            from chat_history import load_recent
+            _llm_client.history = load_recent()
+            loaded = len(_llm_client.history)
+            if loaded:
+                print(f"[Backend] 会話履歴 {loaded} 件をロードしました")
             break
         except Exception as e:
             if _attempt < 4:

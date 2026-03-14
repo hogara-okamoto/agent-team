@@ -6,10 +6,10 @@ const SAMPLE_RATE = 16000
 
 // 発話検出の閾値（RecordButton の VAD と統一）
 const SPEECH_RMS_THRESHOLD = 0.01
-// 発話後の無音が続いたらクリップ送信（ms）
-const SILENCE_AFTER_SPEECH_MS = 1200
-// 最大クリップ長（ms）: これを超えたら強制送信
-const MAX_CLIP_DURATION_MS = 4000
+// 発話後の無音が続いたらクリップ送信（ms）: 自然な「、」の間（~500ms）で切れないよう長めに設定
+const SILENCE_AFTER_SPEECH_MS = 2500
+// 最大クリップ長（ms）: ウェイクワード+長い命令に対応（例: 「岡本さん、3月15日に〜してください」）
+const MAX_CLIP_DURATION_MS = 15000
 
 /**
  * ウェイクワード検出フック。
