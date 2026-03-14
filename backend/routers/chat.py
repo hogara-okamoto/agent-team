@@ -23,6 +23,7 @@ from routers.intent_classifier import (
     INTENT_CALENDAR,
     INTENT_YOUTUBE,
     INTENT_YOUTUBE_STOP,
+    INTENT_WEATHER,
     classify_intent,
 )
 
@@ -256,6 +257,35 @@ async def chat(
             reply=reply,
             action=INTENT_YOUTUBE,
             action_params={"query": query, "url": url},
+        )
+
+    # ── 天気 ─────────────────────────────────────
+    if intent == INTENT_WEATHER and params:
+        from routers.weather_agent import get_weather
+        city: str = params.get("city", "東京")
+        date_offset: int = params.get("date_offset", 0)
+
+        try:
+            weather_text: str = await asyncio.to_thread(get_weather, city, date_offset)
+        except Exception as exc:
+            weather_text = f"天気情報の取得に失敗しました: {exc}"
+
+        context_message = (
+            f"{req.message}\n\n"
+            f"[天気情報]\n{weather_text}\n\n"
+            f"上記の天気情報をもとに、日本語で自然に答えてください。"
+        )
+        try:
+            reply = await asyncio.to_thread(llm.chat, context_message)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"LLM 推論エラー: {exc}") from exc
+
+        append_turn("user", message, intent=intent)
+        append_turn("assistant", reply)
+        return ChatResponse(
+            reply=reply,
+            action=INTENT_WEATHER,
+            action_params={"city": city, "date_offset": date_offset, "weather": weather_text},
         )
 
     # ── Web 検索 ────────────────────────────────

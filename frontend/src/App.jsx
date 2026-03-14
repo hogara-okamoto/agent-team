@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { checkHealth, transcribe, chat, synthesize, clearHistory } from './api'
 import ChatLog from './components/ChatLog'
 import RecordButton from './components/RecordButton'
@@ -30,6 +30,8 @@ export default function App() {
   // メールモーダル
   const [emailParams, setEmailParams] = useState(null)   // null = 非表示
   const [emailConfirm, setEmailConfirm] = useState('')   // モーダルへ渡す確認テキスト
+  // YouTube 開放状態（true = すでに開いている）
+  const youtubeOpenRef = useRef(false)
 
   // バックエンドのヘルスを定期チェック（未接続なら5秒ごと、接続済みなら30秒ごと）
   useEffect(() => {
@@ -84,6 +86,7 @@ export default function App() {
     // YouTube 停止 intent: YouTube タブを閉じる
     if (data.action === 'youtube_stop') {
       window.electronAPI?.stopYouTube?.()
+      youtubeOpenRef.current = false
       try {
         setStatus('synthesizing')
         const wavBlob = await synthesize(replyText)
@@ -93,11 +96,12 @@ export default function App() {
       return
     }
 
-    // YouTube 再生 intent: デフォルトブラウザで YouTube を開く
+    // YouTube 再生 intent: すでに開いている場合は新規オープンしない
     if (data.action === 'youtube_play' && data.action_params) {
       const { url } = data.action_params
-      if (url) {
+      if (url && !youtubeOpenRef.current) {
         window.electronAPI?.openExternal?.(url)
+        youtubeOpenRef.current = true
       }
       try {
         setStatus('synthesizing')

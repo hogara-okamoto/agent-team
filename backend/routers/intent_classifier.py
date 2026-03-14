@@ -20,6 +20,7 @@ INTENT_EMAIL = "send_email"
 INTENT_WEB_SEARCH = "web_search"
 INTENT_CALENDAR = "calendar"
 INTENT_YOUTUBE = "youtube_play"
+INTENT_WEATHER = "weather"
 INTENT_GENERAL = "general"
 
 # ──────────────────────────────────────────────
@@ -255,6 +256,48 @@ async def _extract_calendar_add_params(text: str, llm) -> dict:
 
 
 # ──────────────────────────────────────────────
+# 天気 intent
+# ──────────────────────────────────────────────
+
+_WEATHER_KEYWORDS = ["天気", "気温", "天気予報", "降水確率", "雨が降る", "傘が必要", "晴れる", "雪が降る"]
+
+# 「東京の天気」「大阪の明日の気温」などから都市名を抽出
+_WEATHER_CITY_RE = re.compile(r"([^\s、。！？の]{1,6})の(?:今日|明日|明後日)?(?:の)?(?:天気|気温|天気予報|降水確率)")
+
+# 日付オフセット対応表
+_WEATHER_DATE_MAP = {
+    "今日": 0, "本日": 0, "きょう": 0,
+    "明日": 1, "あした": 1, "あす": 1,
+    "明後日": 2, "あさって": 2,
+}
+
+
+def _has_weather_keyword(text: str) -> bool:
+    return any(kw in text for kw in _WEATHER_KEYWORDS)
+
+
+def _extract_weather_params(text: str) -> dict:
+    """都市名と日付オフセットを抽出する。"""
+    # 日付オフセット
+    date_offset = 0
+    for word, offset in _WEATHER_DATE_MAP.items():
+        if word in text:
+            date_offset = offset
+            break
+
+    # 都市名（「東京の天気」パターン）
+    m = _WEATHER_CITY_RE.search(text)
+    city = m.group(1).strip() if m else "東京"
+
+    # 呼びかけ前置きが都市名になっていないか除外
+    _SELF_NAMES_WEATHER = {"岡本", "エージェント", "私", "僕", "俺", "今日", "明日", "明後日"}
+    if city in _SELF_NAMES_WEATHER:
+        city = "東京"
+
+    return {"city": city, "date_offset": date_offset}
+
+
+# ──────────────────────────────────────────────
 # YouTube intent
 # ──────────────────────────────────────────────
 
@@ -279,15 +322,28 @@ INTENT_YOUTUBE_STOP = "youtube_stop"
 
 def _has_youtube_stop_keyword(text: str) -> bool:
     """YouTube 停止 intent かどうかを判定する。"""
-    stop_verbs = ["とめて", "止めて", "停止", "消して", "切って", "終わって", "閉じて", "やめて"]
+    stop_verbs = [
+        "とめて", "止めて", "停止", "消して", "切って",
+        "終わって", "閉じて", "やめて",
+        "終了", "終わり", "オフ", "止まれ", "閉じろ",
+    ]
     has_stop = any(v in text for v in stop_verbs)
-    if not has_stop:
-        return False
-    # YouTube 明示 or 再生中文脈（直前に youtube_play があった場合）
     has_youtube = _YOUTUBE_SERVICE_RE.search(text) is not None
-    # 「音楽とめて」「BGMとめて」も対応
     has_music = _MUSIC_NOUN_RE.search(text) is not None
-    return has_youtube or has_music
+
+    if has_stop and (has_youtube or has_music):
+        return True
+
+    # 「YouTube終了」「YouTube止まれ」のように YouTube名 + 停止名詞だけのケース
+    # （動詞活用なしで体言止めになることが多い）
+    if has_youtube and has_stop:
+        return True
+
+    # 「YouTube」単体で停止動詞があれば（動詞なし「YouTube終了」も包含）
+    if has_youtube and any(v in text for v in ["終了", "終わり", "停止", "オフ"]):
+        return True
+
+    return False
 
 
 def _has_youtube_keyword(text: str) -> bool:
@@ -348,7 +404,12 @@ async def classify_intent(
             date_str = parse_date_str(message)
             return INTENT_CALENDAR, {"operation": "list", "date": date_str}
 
-    # 5. Web 検索 intent
+    # 5. 天気 intent（Web 検索より前に判定）
+    if _has_weather_keyword(message):
+        params = _extract_weather_params(message)
+        return INTENT_WEATHER, params
+
+    # 6. Web 検索 intent
     if _has_search_keyword(message):
         query = _extract_search_query(message)
         return INTENT_WEB_SEARCH, {"query": query}
