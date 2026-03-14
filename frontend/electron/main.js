@@ -181,15 +181,20 @@ app.whenReady().then(() => {
     shell.openExternal(url)
   })
 
-  // IPC: YouTube タブを閉じる（PowerShell で YouTube タイトルのタブを Ctrl+W）
+  // IPC: YouTube タブを閉じる（PowerShell スクリプトファイル経由）
   ipcMain.handle('youtube-stop', () => {
-    exec(
-      'powershell.exe -NoProfile -Command "' +
-      '$wshell = New-Object -ComObject wscript.shell; ' +
-      'if ($wshell.AppActivate(\'YouTube\')) { ' +
-      'Start-Sleep -Milliseconds 300; ' +
-      '$wshell.SendKeys(\'^w\') }"'
+    const os = require('os')
+    const fs = require('fs')
+    const tmpFile = path.join(os.tmpdir(), 'youtube-stop.ps1')
+    // YouTube タイトルを持つウィンドウをフォアグラウンドにして Ctrl+W でタブを閉じる
+    fs.writeFileSync(tmpFile,
+      '$wshell = New-Object -ComObject wscript.shell\r\n' +
+      'if ($wshell.AppActivate("YouTube")) {\r\n' +
+      '  Start-Sleep -Milliseconds 400\r\n' +
+      '  $wshell.SendKeys("^w")\r\n' +
+      '}\r\n'
     )
+    exec(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${tmpFile}"`)
   })
 
   app.on('activate', () => {
