@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, session } = require('electron')
+const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, session, shell, ipcMain } = require('electron')
 const path = require('path')
 const { exec } = require('child_process')
 
@@ -174,6 +174,11 @@ app.whenReady().then(() => {
     win.show()
     win.focus()
     win.webContents.send('start-recording')
+  })
+
+  // IPC: 外部 URL をデフォルトブラウザで開く（YouTube 再生など）
+  ipcMain.handle('open-external', (_event, url) => {
+    shell.openExternal(url)
   })
 
   app.on('activate', () => {

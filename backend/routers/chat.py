@@ -20,6 +20,7 @@ from routers.intent_classifier import (
     INTENT_EMAIL,
     INTENT_WEB_SEARCH,
     INTENT_CALENDAR,
+    INTENT_YOUTUBE,
     classify_intent,
 )
 
@@ -209,6 +210,26 @@ async def chat(
                 action=INTENT_CALENDAR,
                 action_params={"operation": "list", "date": date_str, "events_text": events_text},
             )
+
+    # ── YouTube 再生 ─────────────────────────────
+    if intent == INTENT_YOUTUBE and params:
+        from routers.youtube_agent import search_youtube
+        query: str = params["query"]
+
+        url: Optional[str] = await asyncio.to_thread(search_youtube, query)
+        if url:
+            reply = f"「{query}」をYouTubeで再生します。"
+        else:
+            # API キー未設定または検索失敗時: フォールバック URL（検索結果ページ）
+            import urllib.parse
+            url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}"
+            reply = f"「{query}」をYouTubeで検索します。"
+
+        return ChatResponse(
+            reply=reply,
+            action=INTENT_YOUTUBE,
+            action_params={"query": query, "url": url},
+        )
 
     # ── Web 検索 ────────────────────────────────
     if intent == INTENT_WEB_SEARCH and params:

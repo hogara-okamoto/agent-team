@@ -81,6 +81,23 @@ export default function App() {
       setEmailConfirm('')
     }
 
+    // YouTube 再生 intent: デフォルトブラウザで YouTube を開く
+    if (data.action === 'youtube_play' && data.action_params) {
+      const { url } = data.action_params
+      if (url) {
+        window.electronAPI?.openExternal?.(url)
+      }
+      try {
+        setStatus('synthesizing')
+        const wavBlob = await synthesize(replyText)
+        playAudio(wavBlob)
+      } catch {
+        // TTS 未対応環境では無音のまま続行
+      }
+      setStatus('idle')
+      return
+    }
+
     // Web 検索 intent: バックエンドで検索済み・LLM が結果を踏まえて返答済み
     if (data.action === 'web_search' && data.action_params) {
       const { query, results = [] } = data.action_params

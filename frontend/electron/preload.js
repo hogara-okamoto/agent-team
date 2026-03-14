@@ -6,4 +6,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onStartRecording: (callback) => {
     ipcRenderer.on('start-recording', (_event) => callback())
   },
+  // 外部 URL をデフォルトブラウザで開く（YouTube 再生など）
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
 })

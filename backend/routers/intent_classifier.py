@@ -19,6 +19,7 @@ from typing import Optional
 INTENT_EMAIL = "send_email"
 INTENT_WEB_SEARCH = "web_search"
 INTENT_CALENDAR = "calendar"
+INTENT_YOUTUBE = "youtube_play"
 INTENT_GENERAL = "general"
 
 # ──────────────────────────────────────────────
@@ -254,6 +255,37 @@ async def _extract_calendar_add_params(text: str, llm) -> dict:
 
 
 # ──────────────────────────────────────────────
+# YouTube intent
+# ──────────────────────────────────────────────
+
+_YOUTUBE_KEYWORDS = [
+    "YouTube", "ユーチューブ", "youtube",
+    "かけて", "流して", "再生して", "再生お願い",
+    "音楽をかけて", "BGMをかけて", "曲をかけて",
+    "音楽を流して", "BGMを流して",
+]
+
+# 「かけて」「流して」だけでは誤検知しやすいため、YouTube 文脈か音楽動詞と組み合わせた場合のみ検出
+_YOUTUBE_SERVICE_RE = re.compile(r"YouTube|ユーチューブ|youtube", re.IGNORECASE)
+_YOUTUBE_VERB_RE = re.compile(r"かけて|流して|再生して|再生お願い")
+_MUSIC_NOUN_RE = re.compile(r"音楽|BGM|曲|ミュージック|ジャズ|ロック|クラシック|ポップス|ヒップホップ|R&B|演歌|J-POP|アニソン|lofi|ローファイ")
+
+
+def _has_youtube_keyword(text: str) -> bool:
+    """YouTube 操作 intent かどうかを判定する。
+    - 「YouTube で〇〇をかけて」 → True（サービス名あり）
+    - 「ジャズをかけて」 → True（音楽ジャンル + 再生動詞）
+    - 「アラームをかけて」 → False（音楽名詞なし）
+    """
+    if _YOUTUBE_SERVICE_RE.search(text):
+        return True
+    # 再生動詞 + 音楽名詞の組み合わせ
+    if _YOUTUBE_VERB_RE.search(text) and _MUSIC_NOUN_RE.search(text):
+        return True
+    return False
+
+
+# ──────────────────────────────────────────────
 # メイン分類関数
 # ──────────────────────────────────────────────
 
@@ -276,7 +308,13 @@ async def classify_intent(
         if params:
             return INTENT_EMAIL, params
 
-    # 2. カレンダー intent
+    # 2. YouTube intent（カレンダー・検索より先に判定）
+    if _has_youtube_keyword(message):
+        from routers.youtube_agent import extract_youtube_query
+        query = extract_youtube_query(message)
+        return INTENT_YOUTUBE, {"query": query}
+
+    # 3. カレンダー intent
     if _has_calendar_keyword(message):
         if _is_calendar_add(message):
             params = await _extract_calendar_add_params(message, llm)
