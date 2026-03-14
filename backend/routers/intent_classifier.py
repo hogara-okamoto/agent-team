@@ -270,6 +270,25 @@ _YOUTUBE_SERVICE_RE = re.compile(r"YouTube|ユーチューブ|youtube", re.IGNOR
 _YOUTUBE_VERB_RE = re.compile(r"かけて|流して|再生して|再生お願い")
 _MUSIC_NOUN_RE = re.compile(r"音楽|BGM|曲|ミュージック|ジャズ|ロック|クラシック|ポップス|ヒップホップ|R&B|演歌|J-POP|アニソン|lofi|ローファイ")
 
+_YOUTUBE_STOP_RE = re.compile(
+    r"(?:YouTube|ユーチューブ)?.*?(?:とめて|止めて|停止|消して|切って|終わって|閉じて|やめて)",
+    re.IGNORECASE,
+)
+INTENT_YOUTUBE_STOP = "youtube_stop"
+
+
+def _has_youtube_stop_keyword(text: str) -> bool:
+    """YouTube 停止 intent かどうかを判定する。"""
+    stop_verbs = ["とめて", "止めて", "停止", "消して", "切って", "終わって", "閉じて", "やめて"]
+    has_stop = any(v in text for v in stop_verbs)
+    if not has_stop:
+        return False
+    # YouTube 明示 or 再生中文脈（直前に youtube_play があった場合）
+    has_youtube = _YOUTUBE_SERVICE_RE.search(text) is not None
+    # 「音楽とめて」「BGMとめて」も対応
+    has_music = _MUSIC_NOUN_RE.search(text) is not None
+    return has_youtube or has_music
+
 
 def _has_youtube_keyword(text: str) -> bool:
     """YouTube 操作 intent かどうかを判定する。
@@ -308,13 +327,17 @@ async def classify_intent(
         if params:
             return INTENT_EMAIL, params
 
-    # 2. YouTube intent（カレンダー・検索より先に判定）
+    # 2. YouTube 停止 intent（再生より先に判定）
+    if _has_youtube_stop_keyword(message):
+        return INTENT_YOUTUBE_STOP, {}
+
+    # 3. YouTube 再生 intent
     if _has_youtube_keyword(message):
         from routers.youtube_agent import extract_youtube_query
         query = extract_youtube_query(message)
         return INTENT_YOUTUBE, {"query": query}
 
-    # 3. カレンダー intent
+    # 4. カレンダー intent
     if _has_calendar_keyword(message):
         if _is_calendar_add(message):
             params = await _extract_calendar_add_params(message, llm)
@@ -325,7 +348,7 @@ async def classify_intent(
             date_str = parse_date_str(message)
             return INTENT_CALENDAR, {"operation": "list", "date": date_str}
 
-    # 3. Web 検索 intent
+    # 5. Web 検索 intent
     if _has_search_keyword(message):
         query = _extract_search_query(message)
         return INTENT_WEB_SEARCH, {"query": query}

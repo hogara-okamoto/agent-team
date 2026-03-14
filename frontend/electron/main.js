@@ -181,6 +181,17 @@ app.whenReady().then(() => {
     shell.openExternal(url)
   })
 
+  // IPC: YouTube タブを閉じる（PowerShell で YouTube タイトルのタブを Ctrl+W）
+  ipcMain.handle('youtube-stop', () => {
+    exec(
+      'powershell.exe -NoProfile -Command "' +
+      '$wshell = New-Object -ComObject wscript.shell; ' +
+      'if ($wshell.AppActivate(\'YouTube\')) { ' +
+      'Start-Sleep -Milliseconds 300; ' +
+      '$wshell.SendKeys(\'^w\') }"'
+    )
+  })
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

@@ -21,6 +21,7 @@ from routers.intent_classifier import (
     INTENT_WEB_SEARCH,
     INTENT_CALENDAR,
     INTENT_YOUTUBE,
+    INTENT_YOUTUBE_STOP,
     classify_intent,
 )
 
@@ -210,6 +211,14 @@ async def chat(
                 action=INTENT_CALENDAR,
                 action_params={"operation": "list", "date": date_str, "events_text": events_text},
             )
+
+    # ── YouTube 停止 ─────────────────────────────
+    if intent == INTENT_YOUTUBE_STOP:
+        return ChatResponse(
+            reply="YouTubeを停止します。",
+            action=INTENT_YOUTUBE_STOP,
+            action_params={},
+        )
 
     # ── YouTube 再生 ─────────────────────────────
     if intent == INTENT_YOUTUBE and params:

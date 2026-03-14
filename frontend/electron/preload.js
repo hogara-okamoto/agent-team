@@ -8,4 +8,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // 外部 URL をデフォルトブラウザで開く（YouTube 再生など）
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  // YouTube タブを閉じる（PowerShell 経由）
+  stopYouTube: () => ipcRenderer.invoke('youtube-stop'),
 })

@@ -81,6 +81,18 @@ export default function App() {
       setEmailConfirm('')
     }
 
+    // YouTube 停止 intent: YouTube タブを閉じる
+    if (data.action === 'youtube_stop') {
+      window.electronAPI?.stopYouTube?.()
+      try {
+        setStatus('synthesizing')
+        const wavBlob = await synthesize(replyText)
+        playAudio(wavBlob)
+      } catch { /* TTS 未対応環境では無音のまま続行 */ }
+      setStatus('idle')
+      return
+    }
+
     // YouTube 再生 intent: デフォルトブラウザで YouTube を開く
     if (data.action === 'youtube_play' && data.action_params) {
       const { url } = data.action_params
