@@ -176,25 +176,25 @@ app.whenReady().then(() => {
     win.webContents.send('start-recording')
   })
 
-  // IPC: 外部 URL をデフォルトブラウザで開く（YouTube 再生など）
+  // IPC: 外部 URL を Chrome で開く（YouTube など）
   ipcMain.handle('open-external', (_event, url) => {
-    shell.openExternal(url)
+    // YouTube は Chrome で明示的に開く（停止時に chrome プロセスで特定できるように）
+    if (url.includes('youtube.com')) {
+      exec(`start chrome "${url}"`)
+    } else {
+      shell.openExternal(url)
+    }
   })
 
-  // IPC: YouTube タブを閉じる（PowerShell スクリプトファイル経由）
+  // IPC: YouTube を停止（Chrome の YouTube タイトルを持つウィンドウを閉じる）
   ipcMain.handle('youtube-stop', () => {
-    const os = require('os')
-    const fs = require('fs')
-    const tmpFile = path.join(os.tmpdir(), 'youtube-stop.ps1')
-    // YouTube タイトルを持つウィンドウをフォアグラウンドにして Ctrl+W でタブを閉じる
-    fs.writeFileSync(tmpFile,
-      '$wshell = New-Object -ComObject wscript.shell\r\n' +
-      'if ($wshell.AppActivate("YouTube")) {\r\n' +
-      '  Start-Sleep -Milliseconds 400\r\n' +
-      '  $wshell.SendKeys("^w")\r\n' +
-      '}\r\n'
+    // "YouTube" をタイトルに含む Chrome プロセスを閉じる（Stop-Process は Stop-Process で別ウィンドウに影響しない）
+    exec(
+      'powershell.exe -NoProfile -Command "' +
+      'Get-Process chrome -ErrorAction SilentlyContinue | ' +
+      'Where-Object { $_.MainWindowTitle -like \'*YouTube*\' } | ' +
+      'Stop-Process -Force"'
     )
-    exec(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${tmpFile}"`)
   })
 
   app.on('activate', () => {
